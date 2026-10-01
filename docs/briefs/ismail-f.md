@@ -1,23 +1,30 @@
-# Brief: Ismail F. (captain: pipeline + submissions)
+# Brief: Ismail F. (classification + captain)
 
-**Tasks:** B1 local baseline (Oct 2), B7 submission #1 (Oct 4), I4 long conversations, and all submissions.
+**You own:** `emotion_label` and `user_profile`, the system prompt, merging PRs, and **all submissions**.
 
-## B1: local baseline
+**Tasks:** B5 emotion-first prompt (Oct 3), B9 submission #1 (Oct 4), I3 dedicated classifier (Oct 10), I6/F2 submissions.
 
-1. Set up the venv, install CPU torch, and download Qwen2.5-0.5B-Instruct into `participant/model` (see the README).
-2. Read `start.sh` and copy the `python run_inference.py ...` command it builds for the `transformers` backend into the README.
-3. Run it on 5 samples (from Yahya's `convert_val.py`, or a hand-made UTF-8 file), and check the output.
+## B5: emotion-first prompt (`prompts/system_v1.txt`)
 
-## B7: submission #1
+The idea comes from MoEL (Lin et al., 2019): first work out the emotion, then reply in a way suited to it.
 
-1. On Migu, use 无卡开机 (wú kǎ kāijī, start without GPU) to copy the code and model. Then switch to GPU only to run.
-2. Use a bigger Qwen that fits 2×24 GB, run it on full val, and check that `validate.py` passes and record the `eval.py` scores.
-3. Go through the checklist in CONTRIBUTING.md, log the run in LOG.md, and submit.
+- Output `emotion_label` **before** `response_text` in the JSON.
+- Add 2–3 lines of guidance each for `anxiety`, `relaxed`, `helplessness`, `fear` and `sadness`.
+- Target reply length is about 100–130 characters.
+- Measure it: 50 val samples → `validate.py` → `eval.py`, and compare against the official prompt.
 
-The goal of #1 is **to make sure the pipeline works**, not to get a good score.
+## I3: dedicated classifier
 
-## Ongoing
+Labels are very imbalanced, and small LLMs are poor classifiers. Test whether a small Chinese encoder (for example `chinese-roberta-wwm-ext`), fine-tuned on the train set, beats the LLM:
 
-- Merge PRs. Keep `main` runnable.
-- Chase the organisers' answers, and record them in `docs/organiser-answers.md`.
+- **Emotion:** single-label, 16 classes. Try class weights for the imbalance.
+- **Profile:** multi-label. That's one sigmoid per label with a threshold, not a softmax.
+- Input: the last user message plus some context. Try a few window sizes.
+- If it wins on val, the final pipeline becomes: classifier → labels, LLM → reply (conditioned on the predicted emotion).
+
+## Captain duties
+
+- Merge PRs only when `main` still runs end to end.
+- Go through the CONTRIBUTING.md checklist before every submission, and log it in LOG.md.
+- Chase the organisers' answers and record them in `docs/organiser-answers.md`.
 - Post the evening sync summary.

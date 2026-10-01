@@ -39,20 +39,40 @@ bash /root/participant/start.sh TEST_FILE RESULT_DIR
 ## Repo layout
 
 ```
-participant/          official entry point (start.sh, run_inference.py) — what gets shipped
+participant/          official entry point (start.sh, run_inference.py)  (Elly)
   model/              model weights — NOT in git (see .gitignore)
-prompts/              system prompts + per-emotion guidance
+prompts/              system prompts + per-emotion guidance          (Ismail F.)
+classifier/           emotion + profile classifier                   (Ismail F.)
 scripts/
-  convert_val.py      val set -> test-format input + gold labels   (Yahya)
-  validate.py         checks a submission.jsonl is well-formed      (Yahya)
-  eval.py             scores predictions against gold labels        (Zakaria)
+  convert_val.py      val set -> test-format input + gold labels     (Zakaria)
+  validate.py         checks a submission.jsonl is well-formed        (Yahya)
+  eval.py             scores predictions against gold labels          (Yahya)
 train/
-  build_sft.py        train set -> chat-format SFT data             (Ismail M.)
-  lora_train.py       LoRA fine-tuning script                       (Ismail M.)
+  build_sft.py        train set -> chat-format SFT data               (Zakaria)
+  lora_train.py       LoRA fine-tuning script                         (Ismail M.)
 data/                 contest data — NOT in git, everyone downloads it themselves
 outputs/              local run outputs — NOT in git
 docs/                 rules notes, findings, decisions
 ```
+
+## Who owns what
+
+| Infrastructure | Dataset | Training | Evaluation | Classification + captain |
+|---|---|---|---|---|
+| Elly | Zakaria | Ismail M. | Yahya | Ismail F. |
+
+Full task list: [TASKS.md](TASKS.md).
+
+## Git in China: "Connection was reset"
+
+GitHub is often blocked. Git doesn't use your VPN's system proxy on its own, so point it there. Use your client's port: Clash Verge defaults to 7897, older Clash versions use 7890.
+
+```bash
+git config --global http.proxy  http://127.0.0.1:7897
+git config --global https.proxy http://127.0.0.1:7897
+```
+
+Or turn on TUN mode in your VPN client, which routes all traffic, git included.
 
 ## Quick start (local, CPU, ~5 samples)
 

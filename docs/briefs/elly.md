@@ -1,38 +1,34 @@
-# Brief: Elly (prompts + reply quality)
+# Brief: Elly (infrastructure)
 
-**Tasks:** B5 the emotion-first prompt (due Oct 3), then I2 prompt iterations (ongoing).
+**You own:** everything that makes our code run on the organisers' machine. That's `participant/` (`start.sh`, `run_inference.py`), the Docker image, the Migu (咪咕 Mīgū) platform, the vLLM backend and latency.
 
-## Background: why "emotion first"
+**Tasks:** B1 local baseline (Oct 2), B7 Migu pipeline (Oct 4), I5 vLLM + latency (Oct 10), F3 buffer.
 
-The paper *MoEL: Mixture of Empathetic Listeners* (Lin et al., 2019) found that replies are more empathetic when the model **first works out the user's emotion, then answers in a way suited to that emotion**. We don't need their architecture. We copy the idea in the prompt.
+## The contract we must meet
 
-## B5: `prompts/system_v1.txt`
+```bash
+bash /root/participant/start.sh TEST_FILE RESULT_DIR
+```
 
-Start from the official prompt in `run_inference.py` and change it so that:
+This runs in conda env `conda_env`, **offline**, and must write `RESULT_DIR/submission.jsonl`. No human steps. If it crashes, we get nothing.
 
-1. The model outputs `emotion_label` **before** `response_text` in its JSON. It "decides" the emotion first, and then the reply is written with that decision already made.
-2. There's short guidance for the top 5 emotions in the data:
-   - `anxiety` (34%)
-   - `relaxed` (15%)
-   - `helplessness` (8%)
-   - `fear` (7%)
-   - `sadness`
+## B1: local baseline (CPU)
 
-   Two or three lines each, on how a good companion responds. For example, anxiety: acknowledge the worry → make it concrete → one small next step. Loneliness: presence and warmth, not advice.
-3. Reply length is about 100–130 Chinese characters, which is the median in the data.
+1. Make a venv, install CPU torch, transformers and modelscope (see the README), and download Qwen2.5-0.5B-Instruct into `participant/model`.
+2. Read `start.sh`. Find the `python run_inference.py ...` command it builds for the `transformers` backend, and run it yourself on 5 samples.
+3. Add the exact command to the README.
 
-**Hints:**
+**Hint:** if you're on Windows, you can't run `start.sh` directly. Read it, don't run it. Also, PowerShell `>` writes UTF-16, so create test files from Python.
 
-- Read 10–20 real gold replies from the train set before you write. Copy their tone, not your own idea of empathy.
-- Keep the prompt in Chinese if the replies must be in Chinese. Small models follow same-language instructions better.
-- Small models (0.5B–7B) break JSON easily. Keep the output format instructions short and strict, and give one example.
+## B7: Migu pipeline
 
-## How to test
+- Use 无卡开机 (wú kǎ kāijī, start without GPU) for setup and copying files, so it doesn't burn card-hours. Switch to GPUs only to run.
+- Run the official image on the full val set with a bigger Qwen. Record the time and the GPU memory used.
+- Work out exactly how we submit: save a private image, or upload a Docker image? Write it step by step in `docs/submission-howto.md`.
+- Log every GPU hour in LOG.md.
 
-You only ever change one thing at a time. For each change:
+## I5: speed + long histories
 
-1. Run on about 50 val samples.
-2. Check that `validate.py` passes.
-3. Run `eval.py`.
-
-Then write a line in the PR: `v1 → v2: changed X, emotion macro-F1 0.21 → 0.24`.
+- Latency of the first 100 samples is scored. Compare the `transformers` and `openai_compatible` (vLLM) backends on the same 100 samples.
+- Some histories are about 40k characters. Make sure inference never crashes on them. Agree the truncation rule with Zakaria (keep the system prompt + the most recent turns).
+- The model must load from local files with nothing downloaded at runtime. Test with networking switched off.

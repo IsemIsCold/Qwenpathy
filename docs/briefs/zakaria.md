@@ -1,28 +1,38 @@
-# Brief: Zakaria (evaluation)
+# Brief: Zakaria (dataset)
 
-**Tasks:** B4 `eval.py` (due Oct 3), then I3 profile prediction (Oct 10).
+**You own:** turning the organisers' data into what everyone else needs. Evaluation needs val inputs and gold labels, training needs SFT data, and everyone needs the stats.
 
-Your script is how we decide everything: which prompt, which model, and whether a submission is worth one of our 5 attempts.
+**Tasks:** B2 `convert_val.py` (Oct 2), B6 data stats (Oct 3), I1 `build_sft.py` (Oct 6).
 
-## B4: `scripts/eval.py`
+Do B2 first: Yahya and Elly are both waiting on it.
 
-`python scripts/eval.py outputs/submission.jsonl data/val_gold.jsonl`
+## B2: `scripts/convert_val.py`
 
-The file formats come from Yahya's `convert_val.py`. Agree on them with him on day 1.
+**Outputs:**
 
-**Report:**
+- `data/val_input.jsonl`: exactly the test input format, one line per prediction point: `{id, conversation_id, target_user_turn_id, history}`, with `history` **ending at the target user turn**
+- `data/val_gold.jsonl`: `{id, response_text, emotion_label, user_profile, memory_refs}`
 
-1. **Emotion:** accuracy, **macro-F1** and a per-label table (precision, recall, count).
-2. **Profile:** F1 for each sub-field (`personality_traits`, `interests`, `style`). These are multi-label, so think about how to score a predicted set against a gold set.
-3. **Baselines, for context:** the score of "always predict `anxiety`" and of "always predict an empty profile".
-4. **Response length:** mean and median character length, predicted vs. gold.
+Add `--n N` to take only the first N points.
 
 **Hints:**
 
-- Why macro-F1 and not just accuracy? About 34% of the labels are `anxiety`. A model that always says "anxiety" gets 34% accuracy and learns nothing. Macro-F1 averages over the classes, so the rare ones count.
-- For the profile, look up micro- vs. macro-F1 and Jaccard similarity. Pick one, and write in the PR why you chose it.
-- About 37% of gold profiles are empty. Decide what score an empty prediction against an empty gold should get.
-- `sklearn.metrics` has most of this already. You don't need to write F1 by hand.
-- Also save the results to a JSON file, so we can compare runs over time.
+- Open one val conversation by hand first and find where the gold labels live. The val set has 900 conversations but 2,354 prediction points, so each conversation produces several points.
+- Match the sample test file in `participant/` **exactly**: key names, how `turn_id` is written.
+- Always use `encoding="utf-8"` and `json.dumps(..., ensure_ascii=False)`.
+- **Write the format down in `docs/data-format.md` on day 1.** Yahya builds `eval.py` against it.
 
-We don't have an official scoring formula yet (we've asked the organisers). Keep the metrics separate rather than inventing a single combined number.
+## B6: `docs/data-stats.md`
+
+- The emotion label distribution (train and val)
+- Profile labels: how often each one appears, and how many profiles are empty
+- Turns per conversation, characters per history, and target reply length. Give percentiles (50/90/99/max), not just the mean.
+- How many histories would go over 2k, 4k and 8k **tokens** with the Qwen tokenizer. This decides the context length and the truncation rule.
+
+## I1: `train/build_sft.py`
+
+The train set has 8,338 conversations and 18,657 prediction points. Turn each point into one chat-format example ending in the assistant's target output. Agree the exact target format with Ismail M. (full JSON, or the reply only?).
+
+- **Split by `conversation_id`**, never by point. Points from the same conversation must not end up in both train and dev.
+- Use the **same system prompt as inference** (`prompts/`).
+- Long conversations: drop the oldest turns first. Always keep the system prompt and the last user turn.

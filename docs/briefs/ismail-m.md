@@ -1,30 +1,23 @@
-# Brief: Ismail M. (fine-tuning lead)
+# Brief: Ismail M. (training lead)
 
-**Tasks:** B6 `build_sft.py` (due Oct 4), then I1 LoRA fine-tuning on AutoDL (Oct 9).
+**You own:** the model we ship. That means choosing the base model, fine-tuning it with LoRA/QLoRA on AutoDL, and handing over weights that load offline.
 
-## B6: `train/build_sft.py`
+**Tasks:** B8 training plan (Oct 4), I2 LoRA runs (Oct 9). You're also the team's ML reference, so others will come to you with questions.
 
-Turn the train set (8,338 conversations, 18,657 prediction points) into chat-format SFT examples:
+## B8: `docs/training-plan.md`
 
-```json
-{"messages": [
-  {"role": "system", "content": "<same system prompt as inference>"},
-  {"role": "user", "content": "..."}, {"role": "assistant", "content": "..."},
-  ...
-  {"role": "assistant", "content": "{\"emotion_label\": ..., \"response_text\": ..., \"user_profile\": ...}"}
-]}
-```
+Decide and write down:
 
-**Decisions to make, and write down in the PR:**
+- **Base model + size:** for example Qwen2.5-7B-Instruct. Check that it fits the eval hardware (probably 2×24 GB) **and** the latency budget. We're still waiting on the organisers' answer about model size limits.
+- **Method:** LoRA or QLoRA, rank, target modules, learning rate, epochs, max sequence length (use Zakaria's token stats).
+- **Target format:** do we train the model to output the full JSON (emotion + profile + reply) or only the reply? Agree it with Zakaria (data) and Ismail F. (classification).
+- **Compute estimate:** GPU type and hours on AutoDL, plus the cost in ¥.
 
-- **Target format:** is the final assistant turn the full JSON (so we train label prediction and the reply together, like MoEL) or only the reply text?
-- **Long conversations:** the longest is about 40k characters. Pick a max token length (say 4k), and decide how to truncate. Keep the most recent turns.
-- **Train/dev split:** split by `conversation_id`, not by prediction point. Points from the same conversation must not end up in both sets.
-- Write the system prompt **exactly** as inference uses it (`prompts/`). If training and inference prompts differ, the fine-tune is wasted.
+## I2: LoRA runs
 
-## I1: LoRA on AutoDL
+1. **Smoke test first:** 50 examples, 1 epoch. Check that the loss goes down, then save → load → generate on 3 val samples.
+2. Full run. Log the hours and cost in LOG.md **before** you start it.
+3. Hand Yahya the predictions on val for scoring. A run only counts once `eval.py` shows it beats the baseline.
+4. Deliverable: merged weights, or an adapter plus a loading snippet, that `run_inference.py` loads **offline**. Agree the format with Elly.
 
-- **Base model:** probably Qwen2.5-7B-Instruct with LoRA or QLoRA, to fit in 24 GB. We'll confirm after the organisers say what model size is allowed.
-- **Always do a smoke test first:** 50 examples, 1 epoch, check the loss goes down, then save → load → generate. Only after that, the full run.
-- Estimate the GPU-hours and log them in LOG.md before every run.
-- Deliverable: merged weights, or an adapter plus a loading snippet, that `run_inference.py` can load **offline**.
+**Hint:** train and infer with the exact same system prompt and chat template. If they differ, fine-tuning gains quietly disappear.

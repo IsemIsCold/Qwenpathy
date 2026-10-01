@@ -1,39 +1,46 @@
-# Brief: Yahya (data plumbing + validation)
+# Brief: Yahya (evaluation)
 
-**Tasks:** B2 `convert_val.py` and B3 `validate.py` (due Oct 2), then I5 latency (Oct 12).
+**You own:** the numbers. Every decision (which prompt, which model, whether a submission is worth one of our 5 attempts) goes through your scripts.
 
-Everyone else depends on your scripts, so they come first.
+**Tasks:** B3 `validate.py` (Oct 2), B4 `eval.py` (Oct 3), I4 reply-quality judge (Oct 8).
 
-## B2: `scripts/convert_val.py`
-
-**Input:** the val set from the organisers' package.
-**Outputs:**
-
-- `data/val_input.jsonl`: exactly the test input format, one line per prediction point:
-  `{id, conversation_id, target_user_turn_id, history: [...]}`, with `history` **ending at the target user turn**
-- `data/val_gold.jsonl`: `{id, response_text, emotion_label, user_profile, memory_refs}` for the same ids
-
-Add a `--n N` flag to take only the first N points, for quick tests.
-
-**Hints:**
-
-- First open one val conversation and work out where the gold labels live. Are they on the assistant turn after the target user turn? The val set has 900 conversations but 2,354 prediction points, so one conversation gives several points.
-- Look for a sample test file in `participant/` and match it **exactly**: key names, key order, how `turn_id` is written.
-- Read and write with `encoding="utf-8"`, and use `ensure_ascii=False` in `json.dumps` so the Chinese stays readable.
+The input formats come from Zakaria (`docs/data-format.md`), so agree on them with him on day 1.
 
 ## B3: `scripts/validate.py`
 
-`python scripts/validate.py outputs/submission.jsonl [--input data/val_input.jsonl]`
+`python scripts/validate.py outputs/submission.jsonl --input data/val_input.jsonl`
 
-Check and report:
+Checks:
 
 - Every line is valid JSON, and the file is UTF-8.
 - There's exactly one output per input `id`: none missing, none duplicated.
 - `response_text` is a non-empty string.
 - `emotion_label` is one of the 16 allowed labels.
-- Every `user_profile` value is from the allowed lists (copy them from the official README).
-- `memory_refs` is a list, and each item matches `mem_\d{6}`.
+- `user_profile` values come from the allowed lists (copy them from the official README).
+- `memory_refs` is a list of `mem_\d{6}`.
 
-Exit code 1 if anything fails, with a summary like `2354 lines, 3 bad emotion labels, 0 missing ids`.
+Exit code 1 on any failure, with a summary like `2354 lines, 3 bad labels, 0 missing ids`. Break files on purpose to test that each check fires.
 
-**Test it:** break a file on purpose (bad label, missing id, broken JSON) and check that each problem gets caught.
+## B4: `scripts/eval.py`
+
+`python scripts/eval.py outputs/submission.jsonl data/val_gold.jsonl`
+
+Report:
+
+1. **Emotion:** accuracy, **macro-F1** and a per-label precision/recall table.
+2. **Profile:** F1 per sub-field (`personality_traits`, `interests`, `style`).
+3. **Baselines:** "always predict `anxiety`", and "empty profile".
+4. **Reply length:** mean and median, predicted vs. gold.
+
+Save the results as JSON and append a row to `docs/score-history.md`.
+
+**Hints:**
+
+- Why macro-F1? 34% of the labels are `anxiety`. A model that always says "anxiety" gets 34% accuracy and is useless. Macro-F1 makes the rare classes count.
+- The profile is multi-label: read up on micro vs. macro F1 and Jaccard, pick one, and say why in your PR.
+- About 37% of gold profiles are empty. Decide how to score empty vs. empty.
+- `sklearn.metrics` already does most of this.
+
+## I4: reply-quality judge
+
+`response_text` is probably judged on empathy, coherence and memory. Build a judge that scores replies 1–5 on those three points. **Use it during development only.** The submission itself must stay offline, but the judge may call an API. Check that its scores roughly match human judgement on 20 samples.
