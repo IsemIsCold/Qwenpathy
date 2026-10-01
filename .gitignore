@@ -1,0 +1,19 @@
+# weights & data
+participant/model/
+*.safetensors
+*.bin
+*.gguf
+*.pt
+data/
+outputs/
+checkpoints/
+
+# env & secrets
+.venv/
+__pycache__/
+.env
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
