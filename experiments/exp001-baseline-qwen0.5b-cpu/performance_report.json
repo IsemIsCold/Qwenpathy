@@ -1,0 +1,27 @@
+{
+  "version": "transformers_inference_v2",
+  "timing_scope": "tokenize+generate+decode+parse+validate; model loading excluded",
+  "model_path_name": "model",
+  "model_type": "qwen2",
+  "model_loader": "AutoModelForCausalLM",
+  "backend": "transformers",
+  "complete": false,
+  "required_rounds": 100,
+  "rounds": 3,
+  "average_latency_ms": 152917.846233,
+  "median_latency_ms": 152156.7218,
+  "p95_latency_ms": 223508.8999,
+  "min_latency_ms": 83087.917,
+  "max_latency_ms": 223508.8999,
+  "latencies_ms": [
+    152156.7218,
+    223508.8999,
+    83087.917
+  ],
+  "hardware_label": "fill-in-before-official-run",
+  "test_file_sha256": "194f824a70fcc5a73e05e818eb0968045c165edc0cdf31e197d135103b910ebd",
+  "submission_sha256": "52b98b6d44f98dc32562e546d196c46c891a89cf842ad44ed1774293a44cf6b3",
+  "samples": 3,
+  "parse_failure_count": 0,
+  "parse_failure_ids": []
+}
