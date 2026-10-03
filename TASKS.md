@@ -18,7 +18,7 @@ Status: `todo` · `doing` · `review` · `done`. Update your own rows, and edit 
 
 | # | Task | Owner | Depends on | Due | Status |
 |---|---|---|---|---|---|
-| B1 | Run the official baseline locally (Qwen2.5-0.5B, CPU, 5 samples) and write down the exact run command in the README | Elly | — | Oct 2 | todo |
+| B1 | Run the official baseline locally (Qwen2.5-0.5B, CPU, 5 samples) and write down the exact run command in the README | Elly → done by Ismail F. ([EXP-001](experiments/exp001-baseline-qwen0.5b-cpu/README.md); Qwen2.5-7B checked via API in [EXP-002](experiments/exp002-qwen7b-api/README.md)) | — | Oct 2 | done (Oct 3) |
 | B2 | `scripts/convert_val.py`: val set → test-format input + gold labels, with an `--n` flag | Zakaria | — | Oct 2 | todo |
 | B3 | `scripts/validate.py`: checks the submission format (4 fields, allowed labels, ids match the input) | Yahya | B2 (format) | Oct 2 | todo |
 | B4 | `scripts/eval.py`: emotion accuracy + macro-F1, profile F1, majority-class baselines | Yahya | B2 | Oct 3 | todo |
