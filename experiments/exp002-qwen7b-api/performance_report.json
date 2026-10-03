@@ -1,0 +1,26 @@
+{
+  "version": "openai_compatible_inference_v2",
+  "timing_scope": "HTTP request+server inference+response decode+parse+validate; server startup excluded",
+  "api_model": "Qwen/Qwen2.5-7B-Instruct",
+  "base_url": "https://api.siliconflow.com/v1",
+  "backend": "openai_compatible",
+  "complete": false,
+  "required_rounds": 100,
+  "rounds": 3,
+  "average_latency_ms": 4945.1576,
+  "median_latency_ms": 5359.5179,
+  "p95_latency_ms": 5664.3348,
+  "min_latency_ms": 3811.6201,
+  "max_latency_ms": 5664.3348,
+  "latencies_ms": [
+    5664.3348,
+    5359.5179,
+    3811.6201
+  ],
+  "hardware_label": "fill-in-before-official-run",
+  "test_file_sha256": "194f824a70fcc5a73e05e818eb0968045c165edc0cdf31e197d135103b910ebd",
+  "submission_sha256": "c5a534f676c955d2861f8507fce600afcb079cc0f8eb1fff86ac7a1b9decea12",
+  "samples": 3,
+  "parse_failure_count": 0,
+  "parse_failure_ids": []
+}
