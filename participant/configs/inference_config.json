@@ -1,5 +1,5 @@
 {
-  "backend": "transformers",
+  "backend": "openai_compatible",
   "model_path": "./model",
   "trust_remote_code": false,
   "device_map": "auto",
@@ -8,13 +8,12 @@
   "api_model": "local-model",
   "api_key": "",
   "request_timeout_seconds": 600,
-  "api_options": {},
+  "api_options": {"chat_template_kwargs": {"enable_thinking": false}},
   "generation": {
     "max_new_tokens": 1200,
-    "do_sample": false,
-    "temperature": 1.0,
-    "top_p": 1.0
+    "seed": 42,
+    "do_sample": false
   },
   "performance_rounds": 100,
-  "hardware_label": "fill-in-before-official-run"
+  "hardware_label": "migu-2x4090"
 }
