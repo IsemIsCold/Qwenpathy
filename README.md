@@ -1,110 +1,120 @@
 # M-Zone AI+ Contest: Emotional Companion Dialogue Model
 
-Our entry for the **2026 动感地带AI+高校创智计划 (Dònggǎn Dìdài AI+ Gāoxiào Chuàngzhì Jìhuà)**, the M-Zone AI+ University Innovation Program. We're in the technical track, topic **数字人综合情感陪伴对话模型 (shùzìrén zōnghé qínggǎn péibàn duìhuà móxíng)**, a digital-human emotional-companion dialogue model.
+Our entry for the **2026 动感地带AI+高校创智计划 (Dònggǎn Dìdài AI+ Gāoxiào Chuàngzhì Jìhuà)**, technical track, topic **数字人综合情感陪伴对话模型 (shùzìrén zōnghé qínggǎn péibàn duìhuà móxíng)**: a digital-human emotional-companion dialogue model.
 
-**Team:** Ismail F. (captain) · Ismail (master's) · Zakaria · Yahya · Elly
+**Team:** Ismail F. (captain) · Ismail M. (training) · Zakaria (data) · Yahya (evaluation) · Elly (infrastructure)
 **Faculty advisor:** Prof. Wang Fang
-**First-round deadline:** **Oct 20, 2026, 23:59 China time.** Code freeze is **Oct 18**.
+**Deadline:** **Oct 20, 2026, 23:59 China time.** Code freeze **Oct 18**.
+
+> **New here? Read in this order:**
+> 1. this README (10 min)
+> 2. [docs/how-to.md](docs/how-to.md): how to run every tool in the repo, with copy-paste commands
+> 3. [docs/team-work.md](docs/team-work.md): what each person built and how it helps your task
+> 4. [TASKS.md](TASKS.md): what you should be doing now
 
 ---
 
-## The task in one paragraph
+## The task
 
-For each test sample, we get a Chinese conversation that ends on a user message. Our container must output four fields for it:
+For each test sample we get a Chinese conversation that ends on a user message. Our Docker image must output one JSON line with four fields:
 
-| Field | What it is |
-|---|---|
-| `response_text` | The next assistant reply, in Chinese |
-| `emotion_label` | The emotion of the latest user message, one of 16: `joy, gratitude, relaxed, care, pride, neutral, surprise, mixed, sadness, loneliness, anxiety, anger, fear, disgust, shame, helplessness` |
-| `user_profile` | Multi-label: `personality_traits` (10 options), `interests` (12), `style` (11) |
-| `memory_refs` | List of `mem_XXXXXX` IDs. The official baseline outputs `[]` because the test set has no public memory bank. |
+| Field | What it is | Points |
+|---|---|---|
+| `emotion_label` | Emotion of the latest user message, one of 16 labels | 25 (accuracy) |
+| `response_text` | The next assistant reply, in Chinese | 20 (BLEU-4 / ROUGE-L / BERTScore vs the gold reply) |
+| `user_profile` | `personality_traits`, `interests`, `style`: multi-label, fixed vocabularies | 15 |
+| `memory_refs` | Always `[]`: the test set has no memory bank | 0 for everyone |
+| Latency | Time per sample on the first 100 samples | 10 |
+| Expert review | Integrity, code quality, platform records: **this repo is evidence** | 30 |
 
-A missing or invalid field scores 0 for that item. The latency of the first 100 samples is also scored.
+The organisers run `bash /root/participant/start.sh TEST_FILE RESULT_DIR` **offline** (no internet, no APIs) on what is probably 2× RTX 4090. We get **5 successful submissions; the last successful one counts.**
 
-**Scoring (official rules page):** 25 emotion accuracy + 20 reply quality (BLEU-4 / ROUGE-L / BERTScore vs the gold reply) + 15 profile + 10 latency = 70 automatic, plus 30 expert review.
+## Current approach (Oct 4)
 
-**Current approach:** Qwen3-14B in non-thinking mode, served by vLLM on 2× RTX 4090, prompt-tuned and then QLoRA fine-tuned on the training set. See [docs/technical-plan.md](docs/technical-plan.md).
+**Qwen3-8B, non-thinking mode**, served by vLLM on 2× 4090 → better prompt (B5) → QLoRA fine-tune on the 17.7k training examples (I2).
 
-**Input line:**
-`{id, conversation_id, target_user_turn_id, history: [{turn_id, role, content}]}`
+Why 8B and not 14B or thinking mode: [experiments/exp004-model-size](experiments/exp004-model-size/README.md) and [docs/technical-plan.md](docs/technical-plan.md).
 
-**Output:** one JSON object per line in `RESULT_DIR/submission.jsonl`
+## The pipeline at a glance
 
-## How the organisers run us
-
-```bash
-bash /root/participant/start.sh TEST_FILE RESULT_DIR
 ```
-
-- It runs in the conda env `conda_env`, **offline**: no internet and no external APIs.
-- There are two backends. `transformers` loads the model from `participant/model`. `openai_compatible` has `start.sh` launch vLLM.
-- The evaluation hardware is probably 2× RTX 4090 (24 GB each). We're waiting for the organisers to confirm.
+organiser data (train_public / val_public)
+   │
+   ├─ scripts/convert_val.py ──► data/val_input*.jsonl + data/val_gold*.jsonl     (Zakaria)
+   │                                  │
+   │                     participant/run_inference.py  (official, + our prompt)    (Elly / Ismail F.)
+   │                     or scripts/exp3_compare.py via API, for quick tests
+   │                                  │
+   │                                  ▼
+   │                         submission.jsonl
+   │                                  │
+   │              scripts/validate.py (format gate) ─► scripts/eval.py (scores)   (Yahya)
+   │
+   └─ train/build_sft.py ──► SFT data (same prompt as inference) ──► QLoRA      (Ismail M.)
+```
 
 ## Repo layout
 
 ```
-participant/          official entry point (start.sh, run_inference.py)  (Elly)
-  model/              model weights — NOT in git (see .gitignore)
-prompts/              system prompts + per-emotion guidance          (Ismail F.)
-classifier/           emotion + profile classifier                   (Ismail F.)
+README.md               you are here
+TASKS.md                who does what, by when, status
+LOG.md                  submissions, compute spend, experiment index
+CONTRIBUTING.md         team rules: branches, PRs, submissions, compute
+participant/            the code we submit: start.sh, run_inference.py (patched), configs/   (Elly)
 scripts/
-  convert_val.py      val set -> test-format input + gold labels     (Zakaria)
-  compute_stats.py    dataset statistics -> docs/data-stats.md        (Zakaria)
-  validate.py         checks a submission.jsonl is well-formed        (Yahya)
-  eval.py             scores predictions against gold labels          (Yahya)
-  exp3_compare.py     API experiment runner: Qwen3 thinking vs non-thinking
-tests/
-  run_tests.py        test suite for validate.py and eval.py          (Yahya)
+  convert_val.py        val set -> test-format input + gold labels          (Zakaria)
+  compute_stats.py      dataset statistics -> docs/data-stats.md            (Zakaria)
+  validate.py           checks a submission is well-formed                  (Yahya)
+  eval.py               scores a submission against gold                    (Yahya)
+  exp3_compare.py       runs the official prompt/parser through an API      (Ismail F.)
+  setup-api-env.ps1     Windows setup for API runs (venv, key, checks)      (Ismail F.)
 train/
-  build_sft.py        train set -> SFT data matching inference exactly (Zakaria / Ismail F.)
-  lora_train.py       LoRA fine-tuning script                         (Ismail M.)
-data/                 contest data — NOT in git, everyone downloads it themselves
-outputs/              local run outputs — NOT in git
-docs/                 technical plan, data format and stats, eval design
-experiments/          one folder per experiment: README log + outputs
+  build_sft.py          train set -> SFT data that matches inference        (Zakaria / Ismail F.)
+tests/
+  run_tests.py          64 tests for validate.py + eval.py                  (Yahya)
+docs/
+  how-to.md             how to run everything (start here)
+  team-work.md          what each member built, and how it helps the others
+  technical-plan.md     scoring, model decision, pipeline, timeline, risks
+  data-format.md        every JSONL format we use                           (Zakaria)
+  data-stats.md         label distributions, lengths, token counts          (Zakaria)
+  eval-design.md        how eval.py is designed                             (Yahya)
+  interpreting-eval-output.md   how to read eval.py's numbers               (Yahya)
+  organiser-answers.md  questions to the organisers + answers
+  briefs/               the original one-page task briefs (Oct 1)
+experiments/
+  expNNN-name/          one folder per experiment: README + outputs + metrics
+
+NOT in git (see .gitignore):
+  data/                 contest data and val files: get them from the team drive / Ismail F.
+  participant/model/    model weights
 ```
 
-## Who owns what
+## Five-minute setup
 
-| Infrastructure | Dataset | Training | Evaluation | Classification + captain |
-|---|---|---|---|---|
-| Elly | Zakaria | Ismail M. | Yahya | Ismail F. |
+You need **Python 3.10+** and **git**. The API path needs no PyTorch.
 
-Full task list: [TASKS.md](TASKS.md).
+```powershell
+git clone <repo URL>
+cd NPU-IC-MLP2026
+# put the data/*.jsonl files in place (see docs/how-to.md §1)
+Set-ExecutionPolicy -Scope Process Bypass
+. .\scripts\setup-api-env.ps1 -Participant "$PWD\participant"
+python tests\run_tests.py        # should end with ALL TESTS PASSED
+```
+
+Then follow [docs/how-to.md](docs/how-to.md) for whatever you need to run.
 
 ## Git in China: "Connection was reset"
 
-GitHub is often blocked. Git doesn't use your VPN's system proxy on its own, so point it there. Use your client's port: Clash Verge defaults to 7897, older Clash versions use 7890.
+Git doesn't use your VPN's system proxy on its own. Point it there (Clash Verge uses 7897, older Clash 7890), or turn on TUN mode:
 
 ```bash
 git config --global http.proxy  http://127.0.0.1:7897
 git config --global https.proxy http://127.0.0.1:7897
 ```
 
-Or turn on TUN mode in your VPN client, which routes all traffic, git included.
+## Two Windows traps
 
-## Quick start (local, CPU, ~5 samples)
-
-```bash
-python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install transformers accelerate modelscope
-modelscope download --model Qwen/Qwen2.5-0.5B-Instruct --local_dir participant/model
-
-python scripts/convert_val.py --n 5 --out data/sample.jsonl --gold data/sample_gold.jsonl
-python participant/run_inference.py ...   # see the transformers branch of start.sh for exact args
-python scripts/validate.py outputs/submission.jsonl
-python scripts/eval.py outputs/submission.jsonl data/sample_gold.jsonl
-```
-
-> **Windows:** don't create JSONL files with PowerShell `>`. It writes UTF-16 and garbles the Chinese text. Write them from Python with `encoding="utf-8"`.
-
-## Key docs
-
-- [CONTRIBUTING.md](CONTRIBUTING.md): team rules, branches, and how submissions work
-- [TASKS.md](TASKS.md): who owns what, and the deadlines
-- [LOG.md](LOG.md): submissions, scores, compute spend and the experiment index
-- [docs/technical-plan.md](docs/technical-plan.md): scoring, model decision, pipeline, timeline, risks
-- [docs/data-format.md](docs/data-format.md) and [docs/data-stats.md](docs/data-stats.md): data contracts and statistics
-- [docs/eval-design.md](docs/eval-design.md) and [docs/interpreting-eval-output.md](docs/interpreting-eval-output.md): how we evaluate
-- [docs/briefs/](docs/briefs/): a one-page brief for each person
+- **Never create JSONL with PowerShell `>`.** It writes UTF-16 and breaks the Chinese text. Write files from Python with `encoding="utf-8"`.
+- **Never paste API keys in chats or commit them.** Keys live in an environment variable for one terminal window only (the setup script does this).

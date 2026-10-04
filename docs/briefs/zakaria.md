@@ -1,5 +1,7 @@
 # Brief: Zakaria (dataset)
 
+> **Original brief from Oct 1, kept for reference.** Some details are outdated (e.g. the base model is now Qwen3-8B, prompts live in `run_inference.py`). Current status: [docs/team-work.md](../team-work.md) and [TASKS.md](../../TASKS.md).
+
 **You own:** turning the organisers' data into what everyone else needs. Evaluation needs val inputs and gold labels, training needs SFT data, and everyone needs the stats.
 
 **Tasks:** B2 `convert_val.py` (Oct 2), B6 data stats (Oct 3), I1 `build_sft.py` (Oct 6).

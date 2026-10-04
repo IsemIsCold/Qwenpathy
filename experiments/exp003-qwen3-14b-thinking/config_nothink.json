@@ -18,5 +18,5 @@
     "top_k": 20
   },
   "performance_rounds": 100,
-  "hardware_label": "siliconflow-api"
+  "hardware_label": "api:router.huggingface.co"
 }

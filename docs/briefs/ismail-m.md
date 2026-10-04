@@ -1,5 +1,7 @@
 # Brief: Ismail M. (training lead)
 
+> **Original brief from Oct 1, kept for reference.** Some details are outdated (e.g. the base model is now Qwen3-8B, prompts live in `run_inference.py`). Current status: [docs/team-work.md](../team-work.md) and [TASKS.md](../../TASKS.md).
+
 **You own:** the model we ship. That means choosing the base model, fine-tuning it with LoRA/QLoRA on AutoDL, and handing over weights that load offline.
 
 **Tasks:** B8 training plan (Oct 4), I2 LoRA runs (Oct 9). You're also the team's ML reference, so others will come to you with questions.

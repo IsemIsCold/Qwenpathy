@@ -1,5 +1,7 @@
 # Brief: Ismail F. (classification + captain)
 
+> **Original brief from Oct 1, kept for reference.** Some details are outdated (e.g. the base model is now Qwen3-8B, prompts live in `run_inference.py`). Current status: [docs/team-work.md](../team-work.md) and [TASKS.md](../../TASKS.md).
+
 **You own:** `emotion_label` and `user_profile`, the system prompt, merging PRs, and **all submissions**.
 
 **Tasks:** B5 emotion-first prompt (Oct 3), B9 submission #1 (Oct 4), I3 dedicated classifier (Oct 10), I6/F2 submissions.

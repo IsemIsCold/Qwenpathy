@@ -1,0 +1,22 @@
+{
+  "backend": "openai_compatible",
+  "model_path": "./model",
+  "trust_remote_code": false,
+  "device_map": "auto",
+  "torch_dtype": "auto",
+  "base_url": "https://router.huggingface.co/v1",
+  "api_model": "Qwen/Qwen3-14B:nscale",
+  "api_key": "",
+  "request_timeout_seconds": 600,
+  "api_options": {},
+  "generation": {
+    "max_new_tokens": 6000,
+    "seed": 42,
+    "do_sample": true,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20
+  },
+  "performance_rounds": 100,
+  "hardware_label": "api:router.huggingface.co"
+}

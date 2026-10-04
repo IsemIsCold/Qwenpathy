@@ -1,5 +1,7 @@
 # Brief: Yahya (evaluation)
 
+> **Original brief from Oct 1, kept for reference.** Some details are outdated (e.g. the base model is now Qwen3-8B, prompts live in `run_inference.py`). Current status: [docs/team-work.md](../team-work.md) and [TASKS.md](../../TASKS.md).
+
 **You own:** the numbers. Every decision (which prompt, which model, whether a submission is worth one of our 5 attempts) goes through your scripts.
 
 **Tasks:** B3 `validate.py` (Oct 2), B4 `eval.py` (Oct 3), I4 reply-quality judge (Oct 8).

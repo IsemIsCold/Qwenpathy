@@ -1,4 +1,5 @@
-# weights & data
+# weights & data (participant/ itself IS tracked: it's our submitted code)
+participant_*/
 participant/model/
 *.safetensors
 *.bin
@@ -7,6 +8,11 @@ participant/model/
 data/
 outputs/
 checkpoints/
+train/data/
+*.zip
+
+# experiment scratch (exp3_compare.py's temp copy of participant/)
+experiments/**/_participant_copy/
 
 # env & secrets
 .venv/

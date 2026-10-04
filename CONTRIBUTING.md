@@ -1,5 +1,7 @@
 # Team rules
 
+> How to run the tools: [docs/how-to.md](docs/how-to.md). Who built what: [docs/team-work.md](docs/team-work.md).
+
 There are five of us, we get 5 successful submissions, and our GPU budget is limited. These rules keep us from wasting any of it.
 
 ## 1. Git workflow
@@ -16,7 +18,11 @@ There are five of us, we get 5 successful submissions, and our GPU budget is lim
 - Model weights (`*.safetensors`, `*.bin`, `participant/model/`)
 - Contest data (`data/`). It's the organisers' data, and it's big.
 - API keys, Migu or AutoDL passwords, or tokens
-- Run outputs (`outputs/`)
+- Run outputs (`outputs/`), zip files, the organisers' `participant/` folder
+
+## 2b. Every experiment gets a log
+
+A folder `experiments/expNNN-name/` with a README (goal, exact command, results table, conclusion) and the `metrics.json` files, plus one row in [LOG.md](LOG.md). Copy [exp004](experiments/exp004-model-size/README.md). The expert review (30 points) reads these.
 
 ## 3. Submissions: captain only
 

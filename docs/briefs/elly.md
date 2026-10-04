@@ -1,5 +1,7 @@
 # Brief: Elly (infrastructure)
 
+> **Original brief from Oct 1, kept for reference.** Some details are outdated (e.g. the base model is now Qwen3-8B, prompts live in `run_inference.py`). Current status: [docs/team-work.md](../team-work.md) and [TASKS.md](../../TASKS.md).
+
 **You own:** everything that makes our code run on the organisers' machine. That's `participant/` (`start.sh`, `run_inference.py`), the Docker image, the Migu (咪咕 Mīgū) platform, the vLLM backend and latency.
 
 **Tasks:** B1 local baseline (Oct 2), B7 Migu pipeline (Oct 4), I5 vLLM + latency (Oct 10), F3 buffer.

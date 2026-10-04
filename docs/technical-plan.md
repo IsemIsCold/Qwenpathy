@@ -1,6 +1,6 @@
 # Technical plan
 
-> Owner: Ismail F. (captain). Last updated: **2026-10-04**. Update this file whenever a decision changes.
+> Owner: Ismail F. (captain). Last updated: **2026-10-04** (base model → Qwen3-8B). Update this file whenever a decision changes.
 
 ## 1. How we're scored (official rules page)
 
@@ -14,25 +14,26 @@
 
 ## 2. Base model decision
 
-**Qwen3-14B, non-thinking mode** (decided Oct 4, from EXP-001 to EXP-003).
+**Qwen3-8B, non-thinking mode** (decided Oct 4 from EXP-003 and EXP-004; was 14B earlier that day).
 
-| Run | Model | Result |
+| Run | Model | Result (50 val points unless noted) |
 |---|---|---|
-| EXP-001 | Qwen2.5-0.5B | Pipeline works; output unusable (speaks as the user) |
-| EXP-002 | Qwen2.5-7B | Correct role, all fields filled; generic replies; `style` always empty |
-| EXP-003 | Qwen3-14B non-thinking (9 val pts) | Emotion acc 0.44 vs 0.22 baseline; over-fills profile; generic replies |
+| EXP-001 | Qwen2.5-0.5B (3 samples) | Pipeline works; output unusable (speaks as the user) |
+| EXP-002 | Qwen2.5-7B (3 samples) | Correct role, all fields filled; generic replies; `style` always empty |
+| EXP-003 | Qwen3-14B thinking vs non-thinking | Thinking: emotion 0.42 vs 0.46, 2.2× slower → **no thinking** |
+| EXP-004 | Qwen3-8B vs 14B, non-thinking | Tie on emotion (0.46 each), 8B faster → **8B** |
 
-Why: clearly above the baseline before any tuning; fits the 2×4090 in bf16 (~30 GB, tensor-parallel 2); non-thinking keeps latency low.
-Conditions: the organisers must allow Qwen3 (question #4), and a full 50-point run on Migu must confirm it.
-Fallback: **Qwen3-8B** with the same pipeline (only the model name changes), then Qwen2.5-7B.
+Why 8B: ties 14B before tuning; ~1.7× lower latency; half the QLoRA time (more iterations before Oct 18); ~16 GB in bf16 fits one 4090 with room for long contexts; smaller image.
+Conditions: the organisers must allow Qwen3 (question #4); B7 must confirm it runs in the official image.
+Fallback: **Qwen3-14B** with the same pipeline if time allows (only the model name changes); Qwen2.5-7B if Qwen3 is not allowed.
 
 ## 3. Inference (submission) — Elly
 
-- Entry point unchanged: `bash /root/participant/start.sh TEST_FILE RESULT_DIR`, backend `openai_compatible` (vLLM, `--tensor-parallel-size 2`), merged bf16 weights in `participant/model`.
+- Entry point unchanged: `bash /root/participant/start.sh TEST_FILE RESULT_DIR`, backend `openai_compatible` (vLLM, `--tensor-parallel-size 2`; also try TP=1 for latency), merged bf16 weights in `participant/model`.
 - Thinking off: `"api_options": {"chat_template_kwargs": {"enable_thinking": false}}` in `configs/inference_config.json`.
 - **Patch `run_inference.py`:** `", ".join(sorted(EMOTIONS))` instead of `", ".join(EMOTIONS)` (a Python set, so the order is random per run). Training and inference prompts must match byte for byte.
 - **Truncation:** same rule as training. If the rendered user message exceeds 3,500 tokens, drop the oldest turns, never start on an assistant turn, always keep the last user turn (I5).
-- Check inside the official image: the vLLM / transformers versions support Qwen3, and `conda_env` exists.
+- Check inside the official image: vLLM ≥ 0.8.5 and transformers ≥ 4.51 (needed for Qwen3), and `conda_env` exists.
 - Measure the latency of the first 100 samples on the 2×4090.
 
 ## 4. Prompt — Ismail F. (B5)
@@ -55,7 +56,7 @@ If the JSON key order changes, rebuild the training data with the same `--field-
 
 ## 6. Fine-tuning — Ismail M. (I2)
 
-- QLoRA on Qwen3-14B, on AutoDL (one 4090 or larger), sequence cap ≈4k tokens, gradient checkpointing.
+- QLoRA on Qwen3-8B, on AutoDL (one 4090 is enough), sequence cap ≈4k tokens, gradient checkpointing.
 - **Template:** Qwen3 *no-think* (LLaMA-Factory `qwen3_nothink`), not the Qwen2.5 `qwen` template, so training sees the same empty `<think></think>` block vLLM adds at inference.
 - Loss on the assistant turn only.
 - Smoke test first (≈500 examples, ≈1 h): the loss drops, JSON stays valid, 20 val points look right. Then the full run (1–2 epochs).
@@ -77,8 +78,8 @@ Fine-tune a small Chinese encoder (e.g. `hfl/chinese-roberta-wwm-ext`) on the 18
 
 | Dates | Milestone |
 |---|---|
-| Oct 5–6 | B5 prompt experiments (API, free); Migu instance up (B7); full EXP-003 on Migu |
-| Oct 6–7 | **Submission #1**: Qwen3-14B non-thinking + best prompt |
+| Oct 5–6 | B5 prompt experiments (EXP-005, API, < $1); Migu instance up with Qwen3-8B (B7) |
+| Oct 6–7 | **Submission #1**: Qwen3-8B non-thinking + best prompt |
 | Oct 7–8 | QLoRA smoke test; BLEU/ROUGE in eval.py; classifier prototype |
 | Oct 9–11 | Full fine-tune, merge, eval on val |
 | Oct 12–14 | **Submissions #2–#3**: fine-tuned model (+ classifier if it wins) |
@@ -90,8 +91,8 @@ Fine-tune a small Chinese encoder (e.g. `hfl/chinese-roberta-wwm-ext`) on the 18
 
 | Risk | Mitigation |
 |---|---|
-| Qwen3 not allowed | Same pipeline with Qwen2.5-7B / 14B |
-| 14B too slow on the 2×4090 | Qwen3-8B; cap max_new_tokens near gold length |
+| Qwen3 not allowed | Same pipeline with Qwen2.5-7B |
+| Official image's vLLM too old for Qwen3 | Ask the organisers; install a newer vLLM inside our image |
 | Train/inference format mismatch | `build_sft.py` imports the inference prompt; sorted emotions; same truncation rule |
 | Migu card-hours run out | 无卡开机 (*wú kǎ kāijī*, start without GPU) for setup and downloads; every GPU job estimated in LOG.md first |
 | Unknown profile metric | Ask the organisers; track both micro-F1 and exact match |

@@ -11,13 +11,18 @@ Two ways of calling the API:
                  on a temporary copy with a per-mode config)
   * --stream     calls the API itself with stream=True, reusing the official
                  script's prompt, history rendering and JSON parser. Needed for
-                 providers that only allow streaming in thinking mode.
+                 providers that only allow streaming in thinking mode. Also saves
+                 the raw model output per sample to out_<mode>/raw_outputs.jsonl.
+
+Scoring: eval.py runs with --force, so a blank field counts as wrong (as in the
+official scoring) instead of blocking the run; the table reports how many.
 
 How thinking is switched:
   * default        "enable_thinking": true/false in the request body
   * --soft-switch  Qwen3's "/think" / "/no_think" tag appended to the user
                    message, for providers that ignore or reject enable_thinking.
                    Implies --stream.
+  * --no-switch    nothing at all, for models without a thinking mode (Qwen2.5).
 
 Examples (PowerShell):
   SiliconFlow:
@@ -71,6 +76,7 @@ TABLE_ROWS = [
     ("Profile micro-F1 (avg)", "profile_micro_f1"),
     ("Profile exact-match (avg)", "profile_exact"),
     ("Parse failures", "parse_failures"),
+    ("Blank predictions (scored as wrong)", "blank_predictions"),
     ("Avg latency per sample (s, API)", "avg_latency_s"),
     ("Avg reasoning length (chars)", "reasoning_chars"),
     ("Wall time (min)", "wall_min"),
@@ -108,7 +114,7 @@ def build_config(base_cfg, args, spec):
         "api_model": args.model,
         "api_key": "",  # the key is passed through the environment, never written to disk
         "hardware_label": f"api:{urlparse(args.base_url).hostname}",
-        "api_options": {} if args.soft_switch else {"enable_thinking": spec["enable_thinking"]},
+        "api_options": {} if (args.soft_switch or args.no_switch) else {"enable_thinking": spec["enable_thinking"]},
     })
     generation = {"max_new_tokens": spec["max_new_tokens"], "seed": args.seed}
     if args.greedy:
@@ -169,7 +175,9 @@ def run_streaming(official, cfg, input_file, res_dir, key, soft_tag):
 
     res_dir.mkdir(parents=True, exist_ok=True)
     submission = res_dir / "submission.jsonl"
+    raw_outputs = res_dir / "raw_outputs.jsonl"
     submission.write_text("", encoding="utf-8")
+    raw_outputs.write_text("", encoding="utf-8")
     latencies, reasoning_chars, failures = [], [], []
 
     for index, sample in enumerate(samples, 1):
@@ -196,6 +204,9 @@ def run_streaming(official, cfg, input_file, res_dir, key, soft_tag):
             failures.append(sample["id"])
         with submission.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(prediction, ensure_ascii=False, separators=(",", ":")) + "\n")
+        with raw_outputs.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"id": sample["id"], "content": content, "reasoning": reasoning},
+                                    ensure_ascii=False) + "\n")
         print(f"[{index}/{len(samples)}] {sample['id']}: {elapsed_ms:.0f} ms, "
               f"reasoning {reasoning_chars[-1]} chars", flush=True)
 
@@ -220,7 +231,10 @@ def score_run(res_dir, input_file, gold_file, scripts, wall_seconds):
     submission = res_dir / "submission.jsonl"
     metrics_path = res_dir / "metrics.json"
     valid = run([sys.executable, scripts / "validate.py", submission, "--input", input_file]) == 0
-    run([sys.executable, scripts / "eval.py", submission, gold_file, "--out", metrics_path, "--history", ""])
+    # --force: a blank field (the official parser's fallback) counts as wrong, as in the official
+    # scoring, instead of blocking the whole run. Check "Valid submission" and "Blank predictions".
+    run([sys.executable, scripts / "eval.py", submission, gold_file, "--out", metrics_path,
+         "--history", "", "--force"])
 
     perf = load_json(res_dir / "performance_report.json") or {}
     metrics = load_json(metrics_path) or {}
@@ -233,6 +247,7 @@ def score_run(res_dir, input_file, gold_file, scripts, wall_seconds):
         "wall_min": round(wall_seconds / 60, 1),
         "avg_latency_s": round(perf.get("average_latency_ms", 0) / 1000, 2),
         "parse_failures": perf.get("parse_failure_count"),
+        "blank_predictions": emotion.get("n_invalid_predictions"),
         "reasoning_chars": perf.get("avg_reasoning_chars", "n/a (use --stream)"),
         "acc": emotion.get("accuracy"),
         "macro_f1": emotion.get("macro_f1"),
@@ -247,9 +262,14 @@ def score_run(res_dir, input_file, gold_file, scripts, wall_seconds):
 def write_report(results, args, input_file, out):
     modes = list(results)
     decoding = "greedy (temperature 0)" if args.greedy else "Qwen recommended sampling per mode"
-    switch = "/think, /no_think tags" if args.soft_switch else "enable_thinking parameter"
+    if args.no_switch:
+        switch = "none (model without thinking mode)"
+    elif args.soft_switch:
+        switch = "/think, /no_think tags"
+    else:
+        switch = "enable_thinking parameter"
     lines = [
-        f"# EXP-003 results: {args.model} via {args.base_url}, {input_file.name}",
+        f"# Results: {args.model} via {args.base_url}, {input_file.name}",
         "",
         f"Decoding: {decoding}, seed {args.seed}. Thinking switch: {switch}.",
         "",
@@ -289,7 +309,13 @@ def parse_args():
     ap.add_argument("--stream", action="store_true", help="use the built-in streaming client")
     ap.add_argument("--soft-switch", action="store_true",
                     help="switch thinking with /think and /no_think tags (implies --stream)")
-    return ap.parse_args()
+    ap.add_argument("--no-switch", action="store_true",
+                    help="send no thinking switch at all, for models without a thinking mode "
+                         "(e.g. Qwen2.5); only valid with --modes nothink")
+    args = ap.parse_args()
+    if args.no_switch and (args.soft_switch or "think" in args.modes):
+        ap.error("--no-switch can't be combined with --soft-switch or the 'think' mode")
+    return args
 
 
 def main():
