@@ -14,7 +14,7 @@ API_KEY="${VLLM_API_KEY:-}"
 START_TIMEOUT="${VLLM_START_TIMEOUT:-600}"
 PYTHON_CMD="${PYTHON_BIN:-python3}"
 VLLM_BIN="${VLLM_BIN:-vllm}"
-VLLM_ARGS=(--tensor-parallel-size 2) # 例如：VLLM_ARGS=(--tensor-parallel-size 2)
+VLLM_ARGS=(--tensor-parallel-size 2 --max-model-len 32768 --gpu-memory-utilization 0.90)  # Qwen3-8B bf16; 32k so the longest histories never get an HTTP 400
 
 if [[ $# -ne 2 ]]; then
   echo "用法: $0 TEST_FILE RESULT_DIR" >&2
