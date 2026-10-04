@@ -55,9 +55,9 @@ duplicate/missing/extra prediction IDs, empty `response_text`, wrong types.
   decision, not an accident.
 - **eval.py gate**: refuses to score submissions failing record-level checks
   (reuses validate.py logic via import; no duplication). Override: `--force`.
-  eval.py scope = core scorer (emotion/profile/baselines/length); BLEU/ROUGE/
-  BERTScore, latency ingestion, bootstrap CI and paired comparison are later
-  layers of the build order, intentionally not in this file.
+  eval.py scope = core scorer (emotion/profile/baselines/length) plus the
+  reply-quality mirror (BLEU-4/ROUGE-L/BERTScore, §4). Latency ingestion,
+  bootstrap CI and paired comparison are later layers, not in this file.
 
 ## 2. Architecture (accepted, with the Layer-4 fix)
 
@@ -124,7 +124,24 @@ CANONICAL = what `scripts/eval.py` actually writes (verified against code,
   "response": {
     "length_pred": {mean, median, min, max},
     "length_gold": {mean, median, min, max},
-    "chinese_char_ratio_pred"   (mean of per-sample CJK ratios; length-unweighted)
+    "chinese_char_ratio_pred"   (mean of per-sample CJK ratios; length-unweighted),
+    "bleu4"                     (char-level, corpus, standard brevity penalty, no smoothing),
+    "rouge_l"                   (char-level, per-sample LCS-F1, macro-averaged;
+                                 exact bit-parallel LCS (checked against the DP,
+                                 test E18); inputs truncated at 2048 chars/side
+                                 so degenerate outputs cannot dominate run time;
+                                 gold max is 1809 chars),
+    "bertscore"                 ({precision, recall, f1} macro-averaged, or null when
+                                 torch/transformers/local weights are unavailable --
+                                 eval NEVER hard-depends on them; weights via ModelScope,
+                                 pass folder via --bert-model or BERTSCORE_MODEL.
+                                 Verified vs bert-score library source Oct 4: uses
+                                 hidden layer 8 for bert-base-chinese -- NOT the last
+                                 layer (last-layer similarities bunch together);
+                                 [CLS]/[SEP] weight 0 but kept as match candidates,
+                                 like score.py; a blank reply scores 0 (test E17).
+                                 Matches the bert-score library to 4 decimals on a
+                                 test model (Oct 5). Failures print the reason)
   },
   "baselines": { "always_anxiety_accuracy", "empty_profile_exact_match_avg" }
 }
@@ -134,15 +151,19 @@ Empty-vs-empty: counts as an exact match per field; contributes no TP/FP/FN to
 micro-F1 (standard multi-label behavior) — verified by tests E01/E02.
 
 DEFERRED to later layers (build order): `latency` (sidecar ingestion),
-response-quality metrics (`bleu4`, `rouge_l`, `bertscore`, repetition,
-english-drift counter), run identity fields (`run_id`, `created_utc`,
-manifest ref), stored per-sample scores (paired diffs), bootstrap CIs.
+repetition / english-drift counters, run identity fields (`run_id`,
+`created_utc`, manifest ref), stored per-sample scores (paired diffs),
+bootstrap CIs. (Response-quality mirror shipped Oct 4: bleu4 / rouge_l
+stdlib-only + bertscore optional-with-local-weights; official composite
+weights still unknown.)
 
 **Metric tiers (anti "metric soup" rule):** every metric is labeled exactly one of
 - **DECISION** — the only numbers a KEEP/REJECT discussion may cite: emotion accuracy
-  (official), macro-F1 (our diagnostic-decision), profile micro-F1.
+  (official), macro-F1 (our diagnostic-decision), profile micro-F1, **ROUGE-L**
+  (reply quality is 20 official points; ROUGE-L is the one reply metric every
+  machine computes, so it guards against prompts that win labels but hurt replies).
 - **DIAGNOSTIC** — confusion pairs, per-label P/R, length/repetition/drift, latency,
-  BLEU/ROUGE/BERTScore. They explain decisions; they never make them.
+  BLEU-4, BERTScore. They explain decisions; they never make them.
 - **QUALITATIVE** — judge scores (dev-only). If a debate cites a diagnostic or
   qualitative number as a deciding argument, the debate is invalid by definition.
 
@@ -192,12 +213,17 @@ is clearly decisive.
 ## 6. Final recommendations
 
 **Roadmap re-prioritized (Oct 4 team review, 16-day constraint):** DONE —
-(1) validate.py + attack tests, (2) eval.py core. **NEXT: (3) analyze.py,
-minimal version = per-sample mistakes CSV (id, gold, pred, field) so the team
-can actually read errors; then (4) reply-quality judge (I4).** DEFERRED to
-post-contest: run registry/manifests, content-addressed caching, bootstrap CIs,
-BERTScore, HTML report. (BLEU/ROUGE were also deferred by team decision.)
-Each shipped layer lands value the day it exists.
+(1) validate.py + attack tests, (2) eval.py core + reply-quality mirror
+(73 tests in tests/run_tests.py as of Oct 5). **PENDING PUSH:** (3) analyze.py v1
+(per-sample mistakes.csv + ranked-hypothesis report.md; criteria imported from
+eval.py; 23 tests incl. the A07 alignment proof) -- not in the repo yet, so not
+counted as done. **NEXT: (4) reply-quality judge (I4).**
+DEFERRED to post-contest: run registry/manifests, content-addressed caching,
+bootstrap CIs, HTML report, translations (arrive with the judge).
+Response-quality metrics shipped Oct 4 after team pushback: BLEU-4/ROUGE-L
+(stdlib, zero-cost) + BERTScore (optional; needs bert-base-chinese weights
+from ModelScope on the eval box -- HF is blocked; eval skips gracefully
+without them).
 2. **Run the official baseline through the whole pipeline immediately** (B1 is done):
    the first end-to-end run sets the score floor and smoke-tests every layer.
 3. **Never over-optimize BLEU** — one gold reference makes it high-variance;
@@ -219,5 +245,5 @@ mirror the announced components, document every assumption, confirm with
 organizers when possible.
 
 **Housekeeping (Oct 4 team review):** `eval-design1.md` near-duplicate —
-keep `eval-design.md`, delete the other; `tests/run_tests.py` must be committed
-and shared with reviewers (58 tests as of Oct 4).
+keep `eval-design.md`, delete the other; `tests/run_tests.py` is committed
+(73 tests as of Oct 5).

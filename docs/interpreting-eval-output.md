@@ -13,7 +13,7 @@ model look wrong (or right).
 
 | # | Check | How | Expected |
 | --- | --- | --- | --- |
-| 1 | Test suite green | `python tests/run_tests.py` | 57/57 PASS |
+| 1 | Test suite green | `python tests/run_tests.py` | ALL TESTS PASSED (73/73 as of Oct 5) |
 | 2 | Perfect ceiling | score `val_gold.jsonl` as its own submission | exactly **1.0000** everywhere (accuracy, macro-F1, profile micro-F1, exact-match) |
 | 3 | Useless floor | always-anxiety + empty-profile submission | accuracy **0.3190**, delta **+0.0000**, macro-F1 ≈ **0.03** |
 | 4 | Order invariance | shuffle the lines of any submission, rescore | byte-identical `metrics.json` |
@@ -50,6 +50,9 @@ the evaluator before debugging any model.
 | --- | --- | --- |
 | pred length mean/median | gold: **mean 158 / median 98 chars** | pred mean 2–3× gold → verbosity (also hurts the 10 latency pts); pred ≈ 20 chars → lazy replies |
 | `chinese_char_ratio_pred` | gold: **mean 0.855, 5th percentile 0.745** | **< 0.70** → model is leaking English / non-Chinese output |
+| `bleu4` (char-level, corpus) | identical text scores 1.0; fixed generic reply scores ~0.01–0.05 | near 0 → replies share no n-gram overlap with gold phrasing (paraphrase-heavy or degenerate); read together with ROUGE-L and the judge |
+| `rouge_l` (char-level, macro) | identical text scores 1.0 | near 0 → replies don't follow gold content/structure at all. Inputs capped at 2048 chars/side so a pathological output can't stall the scorer |
+| `bertscore` (macro P/R/F1) | identical text scores 1.0; strong paraphrases score high (this is its edge over BLEU/ROUGE). Matches the bert-score library: layer 8 for bert-base-chinese (NOT the last layer), [CLS]/[SEP] weight 0; a blank reply scores 0 | `null` = skipped; the reason (weights not installed, or a real error) is printed to stderr. Low F1 with high BLEU → replies copy phrasing but say the wrong thing |
 
 ### INTEGRITY (must-always-be)
 
@@ -89,12 +92,12 @@ with macro-F1 and the delta line.
 
 ## Metric tiers (decision discipline)
 
-Per `docs/eval-design.md`, only three numbers may decide KEEP/REJECT:
+Per `docs/eval-design.md`, only these numbers may decide KEEP/REJECT:
 
 | Tier | Metrics |
 | --- | --- |
-| **DECISION** | emotion accuracy (official), macro-F1, profile micro-F1 |
-| **DIAGNOSTIC** | per-class P/R/F1, confusion pairs, lengths, Chinese ratio, BLEU/ROUGE/BERTScore (when added) |
+| **DECISION** | emotion accuracy (official), macro-F1, profile micro-F1, ROUGE-L (reply quality = 20 official points) |
+| **DIAGNOSTIC** | per-class P/R/F1, confusion pairs, lengths, Chinese ratio, BLEU-4, BERTScore |
 | **QUALITATIVE** | judge scores (dev-only, never official) |
 
 If a debate cites a diagnostic number as the deciding argument, the debate is

@@ -15,6 +15,7 @@ Needs: scripts/validate.py, scripts/eval.py, and in data/:
 """
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -246,6 +247,53 @@ def main():
     check("T38 empty input -> exit 2", proc.returncode == 2 and "no records" in proc.stderr,
           f"rc={proc.returncode} stderr={proc.stderr[:150]}")
 
+    # E15: history header gains bleu4/rouge_l/bertscore; old-format table archived
+    old_hist = os.path.join(tmp, "old-history.md")
+    with open(old_hist, "w", encoding="utf-8") as f:
+        f.write("| date | submission | emotion acc | macro-F1 | profile micro-F1 (avg) | always-anxiety baseline | delta |\n")
+        f.write("|---|---|---|---|---|---|---|\n")
+        f.write("| 2026-10-01 | old_sub.jsonl | 0.3000 | 0.1000 | 0.2000 | 0.3190 | -0.0190 |\n")
+    sub_e15 = os.path.join(tmp, "e15.jsonl")
+    write_jsonl(sub_e15, valid_sub())
+    out_h = os.path.join(tmp, "e15.metrics.json")
+    proc = subprocess.run([sys.executable, EVAL, sub_e15, DATA_GOLD_N50, "--out", out_h, "--history", old_hist],
+                          capture_output=True, text=True, timeout=300)
+    head = open(old_hist, encoding="utf-8").readline()
+    archived_ok = os.path.exists(old_hist + ".v1.md") and "old_sub.jsonl" in open(old_hist + ".v1.md", encoding="utf-8").read()
+    check("E15 new history header has bleu4/rouge_l/bertscore columns",
+          proc.returncode == 0 and "bleu4" in head and "bertscore" in head, f"head={head.strip()}")
+    check("E15 old-format table archived intact (no experiment lost)",
+          archived_ok)
+
+    # E16: order invariance -- shuffled submission must give identical metrics
+    # (excluding the path metadata fields, which legitimately differ)
+    always_fixture = [{
+        "id": r["id"], "response_text": "我理解你的感受，我会一直陪着你。",
+        "emotion_label": "anxiety",
+        "user_profile": {"personality_traits": [], "interests": [], "style": []},
+        "memory_refs": [],
+    } for r in gold_full]
+    import random as _rnd
+    _rnd.seed(7)
+    shuffled = always_fixture[:]
+    _rnd.shuffle(shuffled)
+    sub_base = os.path.join(tmp, "e16_base.jsonl")
+    write_jsonl(sub_base, always_fixture)
+    out_base = os.path.join(tmp, "e16_base.metrics.json")
+    subprocess.run([sys.executable, EVAL, sub_base, DATA_GOLD_FULL, "--out", out_base, "--history", ""],
+                   capture_output=True, text=True, timeout=300)
+    sub_shuf = os.path.join(tmp, "shuffled.jsonl")
+    write_jsonl(sub_shuf, shuffled)
+    out_shuf = os.path.join(tmp, "shuffled.metrics.json")
+    subprocess.run([sys.executable, EVAL, sub_shuf, DATA_GOLD_FULL, "--out", out_shuf, "--history", ""],
+                   capture_output=True, text=True, timeout=300)
+    ma = json.load(open(out_base, encoding="utf-8"))
+    mb = json.load(open(out_shuf, encoding="utf-8"))
+    for mdict in (ma, mb):
+        mdict.pop("submission", None)
+        mdict.pop("gold", None)
+    check("E16 metrics byte-identical under submission reordering", ma == mb)
+
     print()
     print("== eval.py smoke tests ==")
 
@@ -264,6 +312,9 @@ def main():
     check("E01 gold-as-submission: profile macro-F1 1.0 (zero-support labels skipped)",
           m["profile"]["macro_f1_avg"] == 1.0, f"macro={m['profile']['macro_f1_avg']}")
     check("E01 per-class F1 all 1.0", all(s["f1"] == 1.0 for s in m["emotion"]["per_class"].values()))
+    check("E01 gold-as-submission: BLEU-4 1.0 and ROUGE-L 1.0",
+          m["response"]["bleu4"] == 1.0 and m["response"]["rouge_l"] == 1.0,
+          f"bleu={m['response']['bleu4']} rouge={m['response']['rouge_l']}")
 
     # E02: always-anxiety + empty profile -> accuracy == baseline, delta 0
     sub_path = os.path.join(tmp, "anxiety.jsonl")
@@ -287,6 +338,9 @@ def main():
           abs(m["profile"]["style"]["exact_match"] - m["profile"]["style"]["empty_gold_rate"]) < 1e-9,
           f"exact={m['profile']['style']['exact_match']} empty_rate={m['profile']['style']['empty_gold_rate']}")
     check("E02 report prints confusion pairs", "top confusion pairs" in proc.stdout)
+    check("E02 fixed short reply: BLEU-4 low but non-negative / ROUGE-L bounded",
+          0.0 <= m["response"]["bleu4"] < 0.15 and 0.0 <= m["response"]["rouge_l"] < 0.6,
+          f"bleu={m['response']['bleu4']} rouge={m['response']['rouge_l']}")
 
     # E03: id mismatch -> exit 1
     bad = always[:-1]
@@ -324,6 +378,91 @@ def main():
     proc = subprocess.run([sys.executable, EVAL, sub_path, DATA_GOLD_FULL, "--out", out_json, "--history", "", "--force"],
                           capture_output=True, text=True, timeout=300)
     check("E06 --force scores through malformed profiles (exit 0)", proc.returncode == 0, f"rc={proc.returncode}")
+
+    # E10: BERTScore degrades gracefully when weights are missing/unavailable
+    proc = subprocess.run([sys.executable, EVAL, sub_path, DATA_GOLD_FULL, "--out", out_json,
+                           "--history", "", "--force", "--bert-model", os.path.join(tmp, "no_such_model")],
+                          capture_output=True, text=True, timeout=300)
+    m = json.load(open(out_json, encoding="utf-8"))
+    check("E10 BERTScore skipped cleanly on missing weights (exit 0, null, notice printed)",
+          proc.returncode == 0 and m["response"]["bertscore"] is None and "skipped" in proc.stdout,
+          f"rc={proc.returncode} bs={m['response']['bertscore']}")
+
+    # E11/E12/E13: pure-math checks (need numpy; skipped gracefully without it)
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import importlib
+    ev = importlib.import_module("eval")
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
+        print("  [SKIP] E11/E12/E13 -- numpy not installed on this machine")
+    if np is not None:
+        # synthetic matrices carry no [CLS]/[SEP] semantics -> drop_special=False
+        ident = ev._greedy_cosine_f1(np.eye(2), np.eye(2), drop_special=False)
+        # implementation carries a deliberate 1e-8 normalization epsilon -> tolerance 1e-6
+        check("E11 identical token sets -> P=R=F1=1.0",
+              abs(ident[0]-1) < 1e-6 and abs(ident[1]-1) < 1e-6 and abs(ident[2]-1) < 1e-6, f"{ident}")
+        orth = ev._greedy_cosine_f1(np.array([[1.0, 0]]), np.array([[0, 1.0]]), drop_special=False)
+        check("E11 orthogonal tokens -> 0.0",
+              orth == (0.0, 0.0, 0.0), f"{orth}")
+        mixed = ev._greedy_cosine_f1(np.array([[1.0, 0], [1.0, 0]]), np.eye(2), drop_special=False)
+        # P: both pred rows best-match gold[0] -> 1.0 ; R: gold[0] matched, gold[1] not -> 0.5 ; F1 = 2/3
+        check("E11 mixed case -> P 1.0, R 0.5, F1 2/3",
+              abs(mixed[0]-1) < 1e-6 and abs(mixed[1]-0.5) < 1e-6 and abs(mixed[2]-2/3) < 1e-6, f"{mixed}")
+
+        bleu_short = ev.bleu4_corpus(["我很好啊"], ["我很好啊我很好啊"])
+        check("E12 BLEU exact hand case (brevity penalty only) = exp(-1) = 0.3679",
+              abs(bleu_short - round(math.exp(-1), 4)) < 1e-9, f"{bleu_short}")
+
+        # E13: [CLS],A,[SEP] vs [CLS],C,[SEP] (real tokenizer order) with A
+        # orthogonal to C: including specials gives F1 2/3; excluding gives 0.0
+        emb_p = np.array([[1., 0, 0, 0], [0, 0, 1., 0], [0, 1., 0, 0]])
+        emb_g = np.array([[1., 0, 0, 0], [0, 0, 0, 1.], [0, 1., 0, 0]])
+        full = ev._greedy_cosine_f1(emb_p, emb_g, drop_special=False)
+        stripped = ev._greedy_cosine_f1(emb_p, emb_g, drop_special=True)
+        check("E13 special tokens included -> F1 2/3 (the inflation artifact)",
+              abs(full[2] - 2/3) < 1e-6, f"{full}")
+        check("E13 special tokens excluded -> F1 0.0 (bert-score behavior)",
+              stripped == (0.0, 0.0, 0.0), f"{stripped}")
+
+        # E17: a blank reply is only [CLS][SEP]; it must score 0, not match on specials
+        blank = ev._greedy_cosine_f1(np.array([[1., 0], [0, 1.]]),
+                                     np.array([[1., 0], [.5, .5], [0, 1.]]), drop_special=True)
+        check("E17 blank reply ([CLS][SEP] only) -> BERTScore 0.0", blank == (0.0, 0.0, 0.0), f"{blank}")
+
+    # E18: bit-parallel LCS == textbook DP (random strings, incl. empty and repeats)
+    def lcs_dp(a, b):
+        prev = [0] * (len(b) + 1)
+        for x in a:
+            cur = [0]
+            for j, y in enumerate(b):
+                cur.append(prev[j] + 1 if x == y else max(prev[j + 1], cur[j]))
+            prev = cur
+        return prev[-1]
+    import random as _r
+    _r.seed(11)
+    alphabet = "我你他好的了是不在有"
+    lcs_ok = all(
+        ev._lcs_len(a, b) == lcs_dp(a, b)
+        for a, b in [("", ""), ("我", ""), ("", "我")] + [
+            ("".join(_r.choice(alphabet) for _ in range(_r.randint(0, 80))),
+             "".join(_r.choice(alphabet) for _ in range(_r.randint(0, 80))))
+            for _ in range(300)])
+    check("E18 bit-parallel LCS equals the DP on 303 random pairs", lcs_ok)
+
+    # E19: a second header change must not overwrite the first archive
+    hist19 = os.path.join(tmp, "h19.md")
+    old_table = "| date | submission | emotion acc |\n|---|---|---|\n| d | {} | 0.1 |\n"
+    write_raw(hist19, old_table.format("first"))
+    write_raw(hist19 + ".v1.md", old_table.format("archived_earlier"))
+    proc = subprocess.run([sys.executable, EVAL, sub_e15, DATA_GOLD_N50, "--out", out_h, "--history", hist19],
+                          capture_output=True, text=True, timeout=300)
+    check("E19 archive never overwrites an older archive (.v1 kept, .v2 created)",
+          proc.returncode == 0
+          and "archived_earlier" in open(hist19 + ".v1.md", encoding="utf-8").read()
+          and "first" in open(hist19 + ".v2.md", encoding="utf-8").read(),
+          f"rc={proc.returncode} stderr={proc.stderr[:200]}")
 
     # E07/E08: list-as-ID through eval.py must exit cleanly (no traceback)
     bad_id = [dict(r, id=["a", "b"]) for r in always[:5]]

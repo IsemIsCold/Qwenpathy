@@ -8,7 +8,7 @@ Usage:
 
 Scope (per docs/eval-design.md, metric tiers):
   DECISION     emotion accuracy (official), macro-F1 (diagnostic-decision),
-               profile micro-F1 (averaged across the 3 fields)
+               profile micro-F1 (averaged across the 3 fields), ROUGE-L
   DIAGNOSTIC   per-class P/R/F1, confusion matrix, per-label profile P/R/F1,
                exact-match, reply length stats, Chinese-char ratio
   Baselines    always-anxiety accuracy, empty-profile exact-match
@@ -24,9 +24,11 @@ All metrics are pure-stdlib (no sklearn) so the script runs identically on
 Windows / Linux / the offline eval box.
 
 This is the CORE scorer (build-order step 2 of docs/eval-design.md): emotion,
-profile, baselines, length stats. Response-quality metrics (BLEU-4 / ROUGE-L /
-BERTScore), latency ingestion, and the statistics layer (bootstrap CI, paired
-comparison) are later layers and intentionally not implemented here.
+profile, baselines, length stats, and the response-quality mirror (char-level
+BLEU-4 corpus + ROUGE-L macro + BERTScore-with-local-weights, which skips
+gracefully when torch/weights are absent). These approximate the official
+20-pt component; composite weights unknown. Latency ingestion and the
+statistics layer (bootstrap CI, paired comparison) remain later layers.
 
 Gate (critique fix): eval.py refuses to score a submission that fails the same
 record-level checks as validate.py, unless --force is given. Run order:
@@ -38,6 +40,7 @@ Exit code 0 = scored, 1 = refused / misalignment, 2 = unreadable file.
 
 import argparse
 import json
+import math
 import os
 import statistics
 import sys
@@ -79,7 +82,7 @@ PROFILE_FIELDS = list(PROFILE_VOCAB.keys())
 def load_jsonl(path):
     records = {}
     order = []
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8-sig") as f:
         for line_no, line in enumerate(f, start=1):
             if not line.strip():
                 continue
@@ -108,14 +111,25 @@ def load_jsonl(path):
 def score_emotion(pairs):
     """pairs = [(pred_label, gold_label)] ; invalid pred labels count as wrong."""
     n = len(pairs)
-    correct = sum(1 for p, g in pairs if p == g)
+    confusion = {g: Counter() for g in EMOTIONS}
+    pred_count = Counter()
+    correct = n_invalid = 0
+    for p, g in pairs:  # single pass; every count below derives from these tallies
+        if g in confusion:
+            confusion[g][p] += 1
+        pred_count[p] += 1
+        if p == g:
+            correct += 1
+        if p not in EMOTION_SET:
+            n_invalid += 1
+
     per_class = {}
     raw_f1 = {}
     for cls in EMOTIONS:
-        tp = sum(1 for p, g in pairs if p == cls and g == cls)
-        fp = sum(1 for p, g in pairs if p == cls and g != cls)
-        fn = sum(1 for p, g in pairs if p != cls and g == cls)
-        support = sum(1 for _, g in pairs if g == cls)
+        tp = confusion[cls][cls]
+        support = sum(confusion[cls].values())
+        fp = pred_count[cls] - tp
+        fn = support - tp
         precision = tp / (tp + fp) if (tp + fp) else 0.0
         recall = tp / (tp + fn) if (tp + fn) else 0.0
         f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
@@ -127,13 +141,8 @@ def score_emotion(pairs):
     # macro/weighted computed from RAW f1, not the rounded display values
     macro_f1 = sum(raw_f1[c] for c in EMOTIONS) / len(EMOTIONS)
     weighted_f1 = (sum(raw_f1[c] * per_class[c]["support"] for c in EMOTIONS) / n) if n else 0.0
+    confusion_top = {g: dict(sorted(cnt.items(), key=lambda kv: -kv[1])) for g, cnt in confusion.items()}
 
-    confusion = {g: Counter() for g in EMOTIONS}
-    for p, g in pairs:
-        confusion[g][p] += 1
-    confusion = {g: dict(sorted(cnt.items(), key=lambda kv: -kv[1])) for g, cnt in confusion.items()}
-
-    n_invalid = sum(1 for p, _ in pairs if p not in EMOTION_SET)
     return {
         "n": n,
         "accuracy": round(correct / n, 4) if n else 0.0,
@@ -141,7 +150,7 @@ def score_emotion(pairs):
         "weighted_f1": round(weighted_f1, 4),
         "n_invalid_predictions": n_invalid,
         "per_class": per_class,
-        "confusion_top": confusion,
+        "confusion_top": confusion_top,
     }
 
 
@@ -228,6 +237,175 @@ def chinese_char_ratio(text):
     return cjk / len(text)
 
 
+# ---- response-quality metrics: char-level (Chinese standard), stdlib only.
+# These MIRROR the official 20-pt response-quality component (BLEU-4, ROUGE-L)
+# as closely as possible without knowing the official composite weights.
+# Tokenization = characters (jieba-free: no segmentation noise, no dependency).
+# BLEU-4 = corpus-level with standard brevity penalty, no smoothing (a zero
+# n-gram precision means 0 -- informative for degenerate output).
+# ROUGE-L = per-sample LCS-based F1, macro-averaged over samples.
+
+def _ngrams(tokens, n):
+    return Counter(tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1))
+
+
+def bleu4_corpus(pred_texts, gold_texts):
+    pred_tokens = [list(t) for t in pred_texts]
+    gold_tokens = [list(t) for t in gold_texts]
+    pred_len = sum(len(t) for t in pred_tokens)
+    gold_len = sum(len(t) for t in gold_tokens)
+    if pred_len == 0 or gold_len == 0:
+        return 0.0
+    logs = []
+    for n in (1, 2, 3, 4):
+        overlap = 0
+        total = 0
+        for p, g in zip(pred_tokens, gold_tokens):
+            pn = _ngrams(p, n)
+            gn = _ngrams(g, n)
+            overlap += sum(min(c, gn.get(ng, 0)) for ng, c in pn.items())
+            total += max(len(p) - n + 1, 0)
+        if total == 0 or overlap == 0:
+            return 0.0
+        logs.append(math.log(overlap / total))
+    bp = 1.0 if pred_len > gold_len else math.exp(1 - gold_len / pred_len)
+    return round(bp * math.exp(sum(logs) / 4), 4)
+
+
+def _lcs_len(a, b):
+    """Exact LCS length, bit-parallel (Allison & Dix 1986; Hyyro 2004).
+
+    One Python big-int holds a whole DP row, so the cost is O(len(a)) big-int
+    operations instead of O(len(a) * len(b)) Python steps. Same result as the
+    textbook DP (checked against it in tests/run_tests.py, E19).
+    """
+    if not a or not b:
+        return 0
+    masks = {}
+    for i, ch in enumerate(b):
+        masks[ch] = masks.get(ch, 0) | (1 << i)
+    full = (1 << len(b)) - 1
+    v = full
+    for ch in a:
+        u = v & masks.get(ch, 0)
+        v = ((v + u) | (v - u)) & full
+    return len(b) - bin(v).count("1")
+
+
+ROUGE_L_MAX_CHARS = 2048  # per-side cap; diagnostic metric, keeps LCS quadratic time bounded
+
+
+def rouge_l_macro(pred_texts, gold_texts):
+    """Inputs longer than ROUGE_L_MAX_CHARS chars are truncated per side, so a
+    degenerate 20k-char output cannot dominate the run time. Chat replies
+    beyond 2048 chars are degenerate anyway; gold max is 1809."""
+    f1s = []
+    for p, g in zip(pred_texts, gold_texts):
+        p = p[:ROUGE_L_MAX_CHARS]
+        g = g[:ROUGE_L_MAX_CHARS]
+        if not p or not g:
+            f1s.append(0.0)
+            continue
+        L = _lcs_len(p, g)
+        r = L / len(g)
+        pr = L / len(p)
+        f1s.append((2 * r * pr / (r + pr)) if (r + pr) else 0.0)
+    return round(sum(f1s) / len(f1s), 4) if f1s else 0.0
+
+
+def _greedy_cosine_f1(pred_emb, gold_emb, drop_special=True):
+    """BERTScore greedy matching (per the Zhang et al. paper) on per-token
+    embeddings: precision = mean over pred tokens of max sim to any gold
+    token; recall = vice versa. Inputs: np.ndarray (n_tokens, dim).
+
+    drop_special=True gives the first and last token ([CLS]/[SEP] for
+    bert-style tokenizers) weight 0 in the averages, exactly like bert-score
+    (they still count as match candidates). Counting them inflates scores
+    (they match almost perfectly) and favours short replies; a text with no
+    real tokens scores 0. Callers with synthetic embeddings pass
+    drop_special=False.
+    """
+    import numpy as np
+    p = pred_emb / (np.linalg.norm(pred_emb, axis=1, keepdims=True) + 1e-8)
+    g = gold_emb / (np.linalg.norm(gold_emb, axis=1, keepdims=True) + 1e-8)
+    sim = p @ g.T
+    best_for_pred = sim.max(axis=1)  # each pred token's best match among ALL gold tokens
+    best_for_gold = sim.max(axis=0)
+    if drop_special:
+        if sim.shape[0] <= 2 or sim.shape[1] <= 2:
+            # only [CLS][SEP] left: an empty text matches nothing. Without this
+            # a blank reply scores near 1.0 (its specials match gold's specials)
+            return 0.0, 0.0, 0.0
+        # like bert-score: [CLS]/[SEP] stay as match candidates but get weight 0
+        # in the average, so drop them only after taking the max
+        best_for_pred = best_for_pred[1:-1]
+        best_for_gold = best_for_gold[1:-1]
+    precision = float(best_for_pred.mean())
+    recall = float(best_for_gold.mean())
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+    return precision, recall, f1
+
+
+def bertscore_macro(pred_texts, gold_texts, model_name="bert-base-chinese",
+                    layer=8, batch_size=32):
+    """Macro-averaged BERTScore (precision/recall/F1) or None if unavailable.
+
+    Mirrors the official bert-score defaults (as verified against the library
+    source, Oct 4 team review): per-token embeddings from an INTERMEDIATE
+    layer -- bert-score's model2layers uses layer 8 for bert-base-chinese,
+    not the last layer (last-layer similarities bunch together, compressing
+    real differences); greedy max matching with [CLS]/[SEP] given weight 0
+    (drop_special=True in _greedy_cosine_f1); uniform weights (no idf);
+    truncation at 512 tokens (gold replies are short so this bites only P99
+    outliers). Weights must be present LOCALLY (the eval box is offline and
+    HF is blocked; download from ModelScope, pass the folder via --bert-model
+    or BERTSCORE_MODEL; override the layer via --bert-layer if your bert-score
+    version disagrees). Never raises: any failure returns None so the scorer
+    always runs, and the reason is printed to stderr.
+    """
+    try:
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+    except ImportError:
+        return None  # torch/transformers not installed: expected on laptops
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
+        model = AutoModel.from_pretrained(model_name, local_files_only=True)
+    except Exception as exc:  # weights not cached locally: expected, but say so
+        print(f"BERTScore: cannot load {model_name!r} ({type(exc).__name__})", file=sys.stderr)
+        return None
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model.to(device).eval()
+        n = len(pred_texts)
+        # batch pairs of similar length together: far less padding per batch
+        order = sorted(range(n), key=lambda k: max(len(pred_texts[k]), len(gold_texts[k])))
+        ps, rs, f1s = [0.0] * n, [0.0] * n, [0.0] * n
+        with torch.no_grad():
+            for start in range(0, n, batch_size):
+                idx = order[start:start + batch_size]
+                pb = [pred_texts[k] for k in idx]
+                gb = [gold_texts[k] for k in idx]
+                enc = tokenizer(pb + gb, return_tensors="pt", truncation=True,
+                                max_length=512, padding=True)
+                enc = {k: v.to(device) for k, v in enc.items()}
+                out = model(**enc, output_hidden_states=True)
+                hs = out.hidden_states[layer].float().cpu().numpy()
+                lens = enc["attention_mask"].sum(dim=1).tolist()  # right padding (BERT default)
+                B = len(idx)
+                for j, k in enumerate(idx):
+                    ps[k], rs[k], f1s[k] = _greedy_cosine_f1(
+                        hs[j, :lens[j]], hs[B + j, :lens[B + j]], drop_special=True)
+        if not n:
+            return None
+        return {"precision": round(sum(ps) / n, 4),
+                "recall": round(sum(rs) / n, 4),
+                "f1": round(sum(f1s) / n, 4)}
+    except Exception as exc:  # a real bug (bad layer, OOM...): never crash, but never hide it
+        print(f"BERTScore: failed during scoring ({type(exc).__name__}: {exc})", file=sys.stderr)
+        return None
+
+
 def mean_chinese_ratio(texts):
     """Mean of per-sample CJK ratios -- unweighted by response length."""
     ratios = [chinese_char_ratio(t) for t in texts if t]
@@ -303,28 +481,55 @@ def print_report(metrics):
     print(f"gold : mean {r['length_gold']['mean']:>7}  median {r['length_gold']['median']:>7}  max {r['length_gold']['max']}")
     print(f"pred Chinese-char ratio {r['chinese_char_ratio_pred']:.3f}  "
           f"(< 0.70 suggests non-Chinese output drift; gold mean 0.855, 5th pct 0.745)")
+    print(f"BLEU-4 (char-level, corpus) {r['bleu4']:.4f}   "
+          f"ROUGE-L (char-level, macro) {r['rouge_l']:.4f}")
+    bs = r.get("bertscore")
+    if bs:
+        print(f"BERTScore (macro)  P {bs['precision']:.4f}  R {bs['recall']:.4f}  F1 {bs['f1']:.4f}")
+    else:
+        print("BERTScore: skipped -- torch/transformers or local weights unavailable "
+              "(download bert-base-chinese from ModelScope, pass --bert-model <folder>)")
+
+
+HISTORY_HEADER = ("| date | submission | emotion acc | macro-F1 | profile micro-F1 (avg) | "
+                  "always-anxiety baseline | delta | bleu4 | rouge_l | bertscore |\n"
+                  "|---|---|---|---|---|---|---|---|---|---|\n")
 
 
 def append_history(path, metrics, submission_path):
-    header = ("| date | submission | emotion acc | macro-F1 | profile micro-F1 (avg) | always-anxiety baseline | delta |\n"
-              "|---|---|---|---|---|---|---|\n")
     try:
         with open(path, "r", encoding="utf-8") as f:
             exists = bool(f.read().strip())
     except OSError:
         exists = False
+    if exists:
+        with open(path, "r", encoding="utf-8") as f:
+            old_header = f.readline()
+        if "bleu4" not in old_header:
+            # header format change: archive the old table instead of
+            # misaligning it (registry rule: never lose an experiment)
+            version = 1
+            while os.path.exists(f"{path}.v{version}.md"):
+                version += 1
+            os.replace(path, f"{path}.v{version}.md")
+            exists = False
     date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     e = metrics["emotion"]["accuracy"]
     m = metrics["emotion"]["macro_f1"]
     pf = metrics["profile"]["micro_f1_avg"]
     b = metrics["baselines"]["always_anxiety_accuracy"]
-    row = f"| {date} | {submission_path} | {e:.4f} | {m:.4f} | {pf:.4f} | {b:.4f} | {e - b:+.4f} |\n"
+    bleu = metrics["response"]["bleu4"]
+    rouge = metrics["response"]["rouge_l"]
+    bs = metrics["response"].get("bertscore")
+    bs_f1 = f"{bs['f1']:.4f}" if bs else "-"
+    row = (f"| {date} | {submission_path} | {e:.4f} | {m:.4f} | {pf:.4f} | {b:.4f} "
+           f"| {e - b:+.4f} | {bleu:.4f} | {rouge:.4f} | {bs_f1} |\n")
     parent = os.path.dirname(os.path.abspath(path))
     if parent:
         os.makedirs(parent, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         if not exists:
-            f.write(header)
+            f.write(HISTORY_HEADER)
         f.write(row)
 
 
@@ -367,6 +572,12 @@ def main():
     ap.add_argument("gold", help="Path to val_gold.jsonl")
     ap.add_argument("--out", default=None, help="Write metrics JSON here (default: <submission>.metrics.json)")
     ap.add_argument("--history", default="docs/score-history.md", help="Append row to this file (use --history '' to skip)")
+    ap.add_argument("--bert-layer", type=int, default=None,
+                    help="Hidden layer for BERTScore embeddings (default: env BERTSCORE_LAYER or 8; "
+                         "bert-score's model2layers uses 8 for bert-base-chinese -- NOT the last layer)")
+    ap.add_argument("--bert-model", default=None,
+                    help="Local path/name for BERTScore weights (default: env BERTSCORE_MODEL or "
+                         "bert-base-chinese; must be cached locally -- box is offline)")
     ap.add_argument("--force", action="store_true",
                     help="Score even if the submission fails record-level validation (not recommended)")
     args = ap.parse_args()
@@ -383,6 +594,9 @@ def main():
         print("       Run: python scripts/validate.py <submission> --input <val_input>", file=sys.stderr)
         sys.exit(1)
 
+    if not gold_order:
+        print(f"ERROR: {args.gold} has no records", file=sys.stderr)
+        sys.exit(2)
     ids = gold_order  # score in gold order (independent of submission file order)
 
     emotion_pairs = []
@@ -408,6 +622,13 @@ def main():
             "length_pred": length_stats(pred_texts),
             "length_gold": length_stats(gold_texts),
             "chinese_char_ratio_pred": mean_chinese_ratio(pred_texts),
+            "bleu4": bleu4_corpus(pred_texts, gold_texts),
+            "rouge_l": rouge_l_macro(pred_texts, gold_texts),
+            "bertscore": bertscore_macro(
+                pred_texts, gold_texts,
+                model_name=args.bert_model or os.environ.get("BERTSCORE_MODEL", "bert-base-chinese"),
+                layer=args.bert_layer if args.bert_layer is not None
+                      else int(os.environ.get("BERTSCORE_LAYER", "8"))),
         },
     }
 
