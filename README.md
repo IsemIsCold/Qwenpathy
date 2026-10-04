@@ -21,6 +21,10 @@ For each test sample, we get a Chinese conversation that ends on a user message.
 
 A missing or invalid field scores 0 for that item. The latency of the first 100 samples is also scored.
 
+**Scoring (official rules page):** 25 emotion accuracy + 20 reply quality (BLEU-4 / ROUGE-L / BERTScore vs the gold reply) + 15 profile + 10 latency = 70 automatic, plus 30 expert review.
+
+**Current approach:** Qwen3-14B in non-thinking mode, served by vLLM on 2× RTX 4090, prompt-tuned and then QLoRA fine-tuned on the training set. See [docs/technical-plan.md](docs/technical-plan.md).
+
 **Input line:**
 `{id, conversation_id, target_user_turn_id, history: [{turn_id, role, content}]}`
 
@@ -45,14 +49,19 @@ prompts/              system prompts + per-emotion guidance          (Ismail F.)
 classifier/           emotion + profile classifier                   (Ismail F.)
 scripts/
   convert_val.py      val set -> test-format input + gold labels     (Zakaria)
+  compute_stats.py    dataset statistics -> docs/data-stats.md        (Zakaria)
   validate.py         checks a submission.jsonl is well-formed        (Yahya)
   eval.py             scores predictions against gold labels          (Yahya)
+  exp3_compare.py     API experiment runner: Qwen3 thinking vs non-thinking
+tests/
+  run_tests.py        test suite for validate.py and eval.py          (Yahya)
 train/
-  build_sft.py        train set -> chat-format SFT data               (Zakaria)
+  build_sft.py        train set -> SFT data matching inference exactly (Zakaria / Ismail F.)
   lora_train.py       LoRA fine-tuning script                         (Ismail M.)
 data/                 contest data — NOT in git, everyone downloads it themselves
 outputs/              local run outputs — NOT in git
-docs/                 rules notes, findings, decisions
+docs/                 technical plan, data format and stats, eval design
+experiments/          one folder per experiment: README log + outputs
 ```
 
 ## Who owns what
@@ -94,5 +103,8 @@ python scripts/eval.py outputs/submission.jsonl data/sample_gold.jsonl
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): team rules, branches, and how submissions work
 - [TASKS.md](TASKS.md): who owns what, and the deadlines
-- [LOG.md](LOG.md): submissions, scores and compute spend
+- [LOG.md](LOG.md): submissions, scores, compute spend and the experiment index
+- [docs/technical-plan.md](docs/technical-plan.md): scoring, model decision, pipeline, timeline, risks
+- [docs/data-format.md](docs/data-format.md) and [docs/data-stats.md](docs/data-stats.md): data contracts and statistics
+- [docs/eval-design.md](docs/eval-design.md) and [docs/interpreting-eval-output.md](docs/interpreting-eval-output.md): how we evaluate
 - [docs/briefs/](docs/briefs/): a one-page brief for each person
