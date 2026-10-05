@@ -1,0 +1,429 @@
+{
+  "submission": "C:\\Users\\isemb\\NPU-IC-MLP2026\\experiments\\exp005-prompt\\v1_3\\out_nothink\\submission.jsonl",
+  "gold": "C:\\Users\\isemb\\NPU-IC-MLP2026\\data\\val_gold_n50.jsonl",
+  "n_scored": 50,
+  "emotion": {
+    "n": 50,
+    "accuracy": 0.42,
+    "macro_f1": 0.1531,
+    "weighted_f1": 0.4276,
+    "n_invalid_predictions": 0,
+    "per_class": {
+      "joy": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "gratitude": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 4
+      },
+      "relaxed": {
+        "precision": 0.5,
+        "recall": 0.6364,
+        "f1": 0.56,
+        "support": 11
+      },
+      "care": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 1
+      },
+      "pride": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 1
+      },
+      "neutral": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 3
+      },
+      "surprise": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "mixed": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "sadness": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 1
+      },
+      "loneliness": {
+        "precision": 0.125,
+        "recall": 1.0,
+        "f1": 0.2222,
+        "support": 1
+      },
+      "anxiety": {
+        "precision": 0.7143,
+        "recall": 0.625,
+        "f1": 0.6667,
+        "support": 16
+      },
+      "anger": {
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6667,
+        "support": 4
+      },
+      "fear": {
+        "precision": 1.0,
+        "recall": 0.2,
+        "f1": 0.3333,
+        "support": 5
+      },
+      "disgust": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 0
+      },
+      "shame": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 1
+      },
+      "helplessness": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 2
+      }
+    },
+    "confusion_top": {
+      "joy": {},
+      "gratitude": {
+        "relaxed": 3,
+        "helplessness": 1
+      },
+      "relaxed": {
+        "relaxed": 7,
+        "loneliness": 1,
+        "anxiety": 1,
+        "sadness": 1,
+        "gratitude": 1
+      },
+      "care": {
+        "mixed": 1
+      },
+      "pride": {
+        "relaxed": 1
+      },
+      "neutral": {
+        "helplessness": 1,
+        "relaxed": 1,
+        "loneliness": 1
+      },
+      "surprise": {},
+      "mixed": {},
+      "sadness": {
+        "relaxed": 1
+      },
+      "loneliness": {
+        "loneliness": 1
+      },
+      "anxiety": {
+        "anxiety": 10,
+        "loneliness": 4,
+        "helplessness": 1,
+        "relaxed": 1
+      },
+      "anger": {
+        "anger": 2,
+        "helplessness": 1,
+        "anxiety": 1
+      },
+      "fear": {
+        "anxiety": 2,
+        "fear": 1,
+        "sadness": 1,
+        "mixed": 1
+      },
+      "disgust": {},
+      "shame": {
+        "sadness": 1
+      },
+      "helplessness": {
+        "loneliness": 1,
+        "sadness": 1
+      }
+    }
+  },
+  "profile": {
+    "personality_traits": {
+      "n": 50,
+      "n_empty_gold": 20,
+      "empty_gold_rate": 0.4,
+      "micro_f1": 0.227,
+      "micro_precision": 0.16,
+      "micro_recall": 0.3902,
+      "macro_f1": 0.0907,
+      "exact_match": 0.0,
+      "per_label": {
+        "sensitive": {
+          "precision": 0.3421,
+          "recall": 0.8125,
+          "f1": 0.4815,
+          "support": 16
+        },
+        "conservative": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 3
+        },
+        "high_conscientiousness": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 8
+        },
+        "assertive": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 1
+        },
+        "agreeable": {
+          "precision": 0.3333,
+          "recall": 0.2,
+          "f1": 0.25,
+          "support": 5
+        },
+        "introverted": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 4
+        },
+        "emotionally_stable": {
+          "precision": 0.0444,
+          "recall": 1.0,
+          "f1": 0.0851,
+          "support": 2
+        },
+        "casual": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 1
+        },
+        "open": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 1
+        },
+        "extroverted": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        }
+      }
+    },
+    "interests": {
+      "n": 50,
+      "n_empty_gold": 26,
+      "empty_gold_rate": 0.52,
+      "micro_f1": 0.4651,
+      "micro_precision": 0.3333,
+      "micro_recall": 0.7692,
+      "macro_f1": 0.6417,
+      "exact_match": 0.4,
+      "per_label": {
+        "career_development": {
+          "precision": 0.5,
+          "recall": 0.375,
+          "f1": 0.4286,
+          "support": 8
+        },
+        "pets": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "study_exam": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "sports_fitness": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 4
+        },
+        "games": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 2
+        },
+        "reading_writing": {
+          "precision": 0.3333,
+          "recall": 1.0,
+          "f1": 0.5,
+          "support": 1
+        },
+        "art_design": {
+          "precision": 0.3333,
+          "recall": 1.0,
+          "f1": 0.5,
+          "support": 1
+        },
+        "social": {
+          "precision": 0.3889,
+          "recall": 0.875,
+          "f1": 0.5385,
+          "support": 8
+        },
+        "travel_outdoor": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "music": {
+          "precision": 0.3333,
+          "recall": 1.0,
+          "f1": 0.5,
+          "support": 1
+        },
+        "film_animation": {
+          "precision": 0.5,
+          "recall": 1.0,
+          "f1": 0.6667,
+          "support": 1
+        },
+        "programming_technology": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        }
+      }
+    },
+    "style": {
+      "n": 50,
+      "n_empty_gold": 10,
+      "empty_gold_rate": 0.2,
+      "micro_f1": 0.1094,
+      "micro_precision": 0.0833,
+      "micro_recall": 0.1591,
+      "macro_f1": 0.2052,
+      "exact_match": 0.02,
+      "per_label": {
+        "rational": {
+          "precision": 0.5,
+          "recall": 0.1579,
+          "f1": 0.24,
+          "support": 19
+        },
+        "direct": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 14
+        },
+        "detailed": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "brief": {
+          "precision": 0.5,
+          "recall": 0.3333,
+          "f1": 0.4,
+          "support": 3
+        },
+        "indirect": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "high_emotional_expression": {
+          "precision": 1.0,
+          "recall": 0.3333,
+          "f1": 0.5,
+          "support": 3
+        },
+        "colloquial": {
+          "precision": 0.0488,
+          "recall": 0.6667,
+          "f1": 0.0909,
+          "support": 3
+        },
+        "formal": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 2
+        },
+        "humorous": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "emoji_user": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        },
+        "low_emotional_expression": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 0
+        }
+      }
+    },
+    "micro_f1_avg": 0.2672,
+    "macro_f1_avg": 0.3125,
+    "exact_match_avg": 0.14
+  },
+  "response": {
+    "length_pred": {
+      "mean": 161.4,
+      "median": 157.0,
+      "min": 84,
+      "max": 335
+    },
+    "length_gold": {
+      "mean": 216.0,
+      "median": 146.0,
+      "min": 23,
+      "max": 993
+    },
+    "chinese_char_ratio_pred": 0.9029,
+    "bleu4": 0.0548,
+    "rouge_l": 0.1842,
+    "bertscore": null
+  },
+  "baselines": {
+    "always_anxiety_accuracy": 0.32,
+    "empty_profile_exact_match_avg": 0.3733
+  }
+}

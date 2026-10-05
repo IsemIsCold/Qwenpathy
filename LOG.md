@@ -17,7 +17,7 @@
 
 ## Compute
 
-**Migu: 20 card-hours total.** A 2-GPU instance probably costs 2 card-hours per hour.
+**Migu: 30 card-hours total (voucher).** A 2-GPU instance probably costs 2 card-hours per hour.
 
 | Date | Who | Job | Estimated | Actual | Remaining |
 |---|---|---|---|---|---|
@@ -36,6 +36,7 @@
 | 2026-10-04 | Ismail F. | Hugging Face router (Nscale) | Qwen3-14B non-thinking | EXP-003, 9 val samples | free monthly credit ($0.10), used up |
 | 2026-10-04 | Ismail F. | Hugging Face router (Nscale) | Qwen3-14B non-thinking + thinking | EXP-003, 50 val points per mode | from the $5 credit added Oct 4 |
 | 2026-10-04 | Ismail F. | Hugging Face router (Nscale) | Qwen3-8B non-thinking | EXP-004, 50 val points | from the $5 credit |
+| 2026-10-05 | Ismail F. + Ismail M. | Hugging Face router (Nscale) | Qwen3-8B (non-thinking; one thinking run) | EXP-005 to EXP-016, ~16 runs × 50 points | from the $5 credit (cents per run) |
 
 ## Experiments
 
@@ -45,4 +46,15 @@
 | EXP-002 | 2026-10-03 | Qwen2.5-7B via API, official prompt | Correct role, all fields filled, generic replies | [README](experiments/exp002-qwen7b-api/README.md) |
 | EXP-003 | 2026-10-04 | Qwen3-14B thinking vs non-thinking via API, 50 val pts | Thinking: no better on emotion (0.42 vs 0.46), 2.2× slower (5.9 s vs 2.7 s). **Thinking dropped.** | [README](experiments/exp003-qwen3-14b-thinking/README.md) |
 | EXP-004 | 2026-10-04 | Qwen3-8B vs 14B (non-thinking) via API, 50 val pts | Tie on emotion accuracy (0.46); 8B faster, cheaper to train, smaller image. **Base model: Qwen3-8B.** | [README](experiments/exp004-model-size/README.md) |
-| EXP-005 | 2026-10-05 | Prompt versions V0–V3 (B5), Qwen3-8B greedy, 50 val pts | in progress | `experiments/exp005-prompt/` |
+| EXP-005 | 2026-10-05 | Prompt versions V0–V3 (B5), Qwen3-8B greedy, 50 val pts | V0 acc 0.50 / macro-F1 0.19 = submission #1. V1 no better (base-rate line hurt rare emotions). | `experiments/exp005-prompt/` |
+| EXP-006 | 2026-10-05 | Ismail M.: Qwen3-8B **thinking** mode, n50 | **Invalid run**: empty reply + blank label on sample 1. Thinking stays off. | [README](experiments/exp006-think-8b/README.md) |
+| EXP-007 | 2026-10-05 | Ismail M.: English prompt ablation, nothink, n50 | acc 0.48, macro-F1 0.214, profile micro-F1 0.234, exact 0.34. Not adopted. | [README](experiments/exp007-prompt-ablation/README.md) |
+| EXP-008 | 2026-10-05 | Ismail M.: emotion-focused prompt, nothink, n50 | acc 0.52 (anxiety-biased, macro-F1 0.141), profiles all empty (micro-F1 0, exact 0.373 = empty baseline). Not adopted. | [README](experiments/exp008-fix-emotion-prompt/README.md) |
+| EXP-009 | 2026-10-05 | Ismail M.: profile-fix English prompt (16 definitions, profile + length rules), nothink, n50 | acc 0.46, macro-F1 0.196, profile micro-F1 0.329, exact 0.273, reply median 131.5, latency 3.57 s (API). Profile idea kept (→ V1.8), length rule dropped. | [README](experiments/exp009-profile-fix-prompt/README.md) |
+| EXP-010 | 2026-10-05 | V1.3 = V0 + EXP-009 profile + length rules, greedy, 50 val pts | acc 0.42, macro-F1 0.153 (worse); BLEU-4 0.021→0.055, ROUGE-L 0.176→0.184, reply median 157. **Rejected; keep V0.** | `experiments/exp005-prompt/README.md` |
+| EXP-011 | 2026-10-05 | V1.4 = V0 + length rule only, greedy, 50 val pts | acc 0.44, macro-F1 0.195, profile micro-F1 0.224, BLEU-4 0.051, ROUGE-L 0.174, reply median 164. **Rejected.** Long reply written before the label hurts emotion. | `experiments/exp005-prompt/README.md` |
+| EXP-012 | 2026-10-05 | V1.5 = V1.4 + emotion-first field order | acc 0.42, macro-F1 0.150, ROUGE-L 0.177, BLEU-4 0.048. **Rejected.** Order doesn't help; length rule dropped. Emotion prompt work stops, V0 stays. | `experiments/exp005-prompt/README.md` |
+| EXP-013 | 2026-10-05 | Offline: drop over-predicted tags (emotionally_stable, study_exam, colloquial) from V0 output | profile micro-F1 0.275→0.360, exact 0.067→0.240 on n50. Needs confirmation on another val slice. | `experiments/exp005-prompt/README.md` |
+| EXP-014 | 2026-10-05 | V1.6 = Ismail M.'s English prompt (+3 fixes: no empty emotion, profile vocab added, memory_refs []) | acc 0.44 (care over-predicted 10×), profile micro-F1 0.335, exact 0.313 (+filter: 0.383 / 0.393). Emotion rejected, profile rules kept. | `experiments/exp005-prompt/README.md` |
+| EXP-015 | 2026-10-05 | V1.7 = V0 + V1.6 profile rules + tag filter | acc 0.46, macro-F1 0.204, profile micro-F1 0.373, exact 0.320, ROUGE-L 0.178. Candidate; re-tested on n50b. | `experiments/exp005-prompt/README.md` |
+| EXP-016 | 2026-10-05 | V0 vs V1.7 on n50b (independent random slice) | acc 0.60 vs 0.62, profile micro-F1 0.175 vs 0.300, exact 0.107 vs 0.247, ROUGE-L 0.205 vs 0.200. **V1.7 confirmed.** Submission #2 = **V1.8** = V1.7 + emotion alias map (parser only). | `experiments/exp005-prompt/README.md` |

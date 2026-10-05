@@ -29,11 +29,15 @@ For each test sample we get a Chinese conversation that ends on a user message. 
 
 The organisers run `bash /root/participant/start.sh TEST_FILE RESULT_DIR` **offline** (no internet, no APIs) on what is probably 2× RTX 4090. We get **5 successful submissions; the last successful one counts.**
 
-## Current approach (Oct 4)
+## Current approach (Oct 5)
 
-**Qwen3-8B, non-thinking mode**, served by vLLM on 2× 4090 → better prompt (B5) → QLoRA fine-tune on the 17.7k training examples (I2).
+**Qwen3-8B, non-thinking mode**, served by vLLM on 2× 4090.
 
-Why 8B and not 14B or thinking mode: [experiments/exp004-model-size](experiments/exp004-model-size/README.md) and [docs/technical-plan.md](docs/technical-plan.md).
+- **Prompt: V1.8, frozen** (`participant_v1_8/`): the official prompt + "leave [] if insufficient information" profile rules + a filter for over-predicted profile tags + a map for invented emotion labels. Chosen over 16 experiments and confirmed on an untouched val slice: [experiments/exp005-prompt](experiments/exp005-prompt/README.md).
+- **Next: V2 = QLoRA fine-tune** on the training set, with exactly the V1.8 prompt. See [TASKS.md](TASKS.md) Phase 3a.
+- Submissions: #1 = V0 (Oct 4). #2 = the fine-tuned model if it beats V1.8 on both val slices, otherwise V1.8 by Oct 16.
+
+Why 8B, non-thinking: [exp004-model-size](experiments/exp004-model-size/README.md), [exp006-think-8b](experiments/exp006-think-8b/README.md), [docs/technical-plan.md](docs/technical-plan.md).
 
 ## The pipeline at a glance
 
@@ -66,12 +70,14 @@ scripts/
   compute_stats.py      dataset statistics -> docs/data-stats.md            (Zakaria)
   validate.py           checks a submission is well-formed                  (Yahya)
   eval.py               scores a submission against gold                    (Yahya)
+  analyze.py            error analysis: buckets, points lost, A/B compare   (Yahya)
   exp3_compare.py       runs the official prompt/parser through an API      (Ismail F.)
   setup-api-env.ps1     Windows setup for API runs (venv, key, checks)      (Ismail F.)
 train/
   build_sft.py          train set -> SFT data that matches inference        (Zakaria / Ismail F.)
 tests/
-  run_tests.py          64 tests for validate.py + eval.py                  (Yahya)
+  run_tests.py          tests for validate.py + eval.py                     (Yahya)
+  test_analyze.py       42 tests for analyze.py                             (Yahya)
 docs/
   how-to.md             how to run everything (start here)
   team-work.md          what each member built, and how it helps the others
