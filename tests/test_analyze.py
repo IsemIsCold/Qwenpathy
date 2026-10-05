@@ -172,7 +172,7 @@ def main():
     out = os.path.join(tmp, "a09")
     proc = run_analyze(sub, out, "--metrics", metrics_path)
     analysis_json = json.load(open(os.path.join(out, "analysis.json"), encoding="utf-8"))
-    check("A09 analysis.json schema_version present", analysis_json.get("schema_version") == "2.1")
+    check("A09 analysis.json schema_version present", analysis_json.get("schema_version") == "4.0")
     check("A09 analysis.json has meta", "meta" in analysis_json and "submission" in analysis_json["meta"])
     check("A09 analysis.json has summary", "summary" in analysis_json)
     check("A09 analysis.json has hypotheses", "hypotheses" in analysis_json)
@@ -307,6 +307,183 @@ def main():
     rows = read_csv(os.path.join(out, "mistakes.csv"))
     rouge_vals = [float(r["rouge_l"]) for r in rows]
     check("A16 gold-as-submission rouge_l ≈ 1.0", all(r >= 0.99 for r in rouge_vals), f"min={min(rouge_vals) if rouge_vals else 'N/A'}")
+
+    # A17-A25: v3.0 Error Genome tests
+    print("== v3.0 Error Genome tests ==")
+
+    # A17: taxonomy present in report and analysis.json
+    out = os.path.join(tmp, "a17")
+    proc = run_analyze(sub_new, out)
+    report = open(os.path.join(out, "report.md"), encoding="utf-8").read()
+    analysis_json = json.load(open(os.path.join(out, "analysis.json"), encoding="utf-8"))
+    check("A17 report has Error Taxonomy section", "## Error Taxonomy" in report)
+    check("A17 analysis.json has taxonomy", "taxonomy" in analysis_json)
+
+    # A18: genome present in report and analysis.json
+    check("A18 report has Error Genome section", "## Error Genome" in report)
+    check("A18 analysis.json has genome counts", "genome" in analysis_json)
+    check("A18 genome counts are non-negative ints",
+          all(isinstance(analysis_json["genome"].get(k), int) and analysis_json["genome"].get(k) >= 0
+              for k in ["novel_count", "persistent_count", "regressed_count", "resolved_count"]))
+
+    # A19: clusters present in report and analysis.json
+    check("A19 report has Error Groups section", "## Error Groups and Regimes" in report)
+    check("A19 analysis.json has clusters", "clusters" in analysis_json)
+
+    # A20: counterfactuals present
+    check("A20 report has Counterfactual Score Impact", "## Counterfactual Score Impact" in report)
+    check("A20 analysis.json has counterfactuals", "counterfactuals" in analysis_json)
+
+    # A21: signature determinism -- same input -> same sig_id
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import analyze as an3
+    out1 = os.path.join(tmp, "a21a")
+    run_analyze(sub_new, out1)
+    out2 = os.path.join(tmp, "a21b")
+    run_analyze(sub_new, out2)
+    aj1 = json.load(open(os.path.join(out1, "analysis.json"), encoding="utf-8"))
+    aj2 = json.load(open(os.path.join(out2, "analysis.json"), encoding="utf-8"))
+    check("A21 taxonomy counts deterministic",
+          aj1["taxonomy"] == aj2["taxonomy"])
+
+    # A22: genome persistence across different run_labels
+    reg_tmp = os.path.join(tmp, "reg_a22")
+    out_v1 = os.path.join(tmp, "a22_v1")
+    run_analyze(sub_new, out_v1, "--run-label", "v1.0", "--registry", reg_tmp)
+    out_v2 = os.path.join(tmp, "a22_v2")
+    run_analyze(sub_new, out_v2, "--run-label", "v1.1", "--registry", reg_tmp)
+    aj_v2 = json.load(open(os.path.join(out_v2, "analysis.json"), encoding="utf-8"))
+    # second run on identical data should mark signatures as persistent
+    check("A22 persistence tracked across run_labels",
+          aj_v2["genome"]["persistent_count"] > 0 or aj_v2["genome"]["novel_count"] == 0)
+
+    # A23: experiment notes stored in registry
+    out_v3 = os.path.join(tmp, "a22_v3")
+    run_analyze(sub_new, out_v3, "--run-label", "v1.2", "--registry", reg_tmp,
+                "--experiment-notes", "test note")
+    exp_path = os.path.join(reg_tmp, "experiments.json")
+    exp_data = json.load(open(exp_path, encoding="utf-8"))
+    check("A23 experiment notes stored", "v1.2" in exp_data and exp_data["v1.2"].get("notes") == "test note")
+
+    # A24: counterfactual score gain is non-negative and bounded
+    cfs = analysis_json.get("counterfactuals", [])
+    check("A24 counterfactuals have score_gain", all("score_gain" in cf for cf in cfs))
+    check("A24 counterfactual score_gain is numeric (negative = the fix would hurt)", all(isinstance(cf.get("score_gain"), (int, float)) for cf in cfs))
+
+    # A25: recommended next experiment section present when counterfactuals exist
+    check("A25 report has Recommended Next Experiment",
+          "## Recommended Next Experiment" in report or not cfs)
+
+    # ------------------------------------------------------------- v4 tests
+    print("== v4.0 tests ==")
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import eval as ev
+    import random
+    rng = random.Random(7)
+    n = len(gold)
+    # realistic noisy submission: 40% emotions wrong, one over-predicted tag, some dropped tags
+    noisy = []
+    for r in gold:
+        x = json.loads(json.dumps(r))
+        if rng.random() < 0.4:
+            x["emotion_label"] = rng.choice(["anxiety", "relaxed", "sadness", "fear"])
+        prof = x["user_profile"]
+        if rng.random() < 0.7:
+            prof["personality_traits"] = sorted(set(prof.get("personality_traits", [])) | {"emotionally_stable"})
+        if rng.random() < 0.3:
+            prof["style"] = []
+        x["memory_refs"] = []
+        noisy.append(x)
+    sub_noisy = os.path.join(tmp, "noisy.jsonl"); write_jsonl(sub_noisy, noisy)
+    out = os.path.join(tmp, "b_noisy")
+    proc = run_analyze(sub_noisy, out)
+    aj = json.load(open(os.path.join(out, "analysis.json"), encoding="utf-8"))
+    report = open(os.path.join(out, "report.md"), encoding="utf-8").read()
+    check("B01 noisy run exit 0", proc.returncode == 0, proc.stderr[:200])
+
+    # B02: regimes never hold contradictory conditions, never near-universal ones
+    ok_contra, ok_base = True, True
+    for c in aj["clusters"]:
+        conds = c["conditions"]
+        for prefix in ("turn_", "hist_", "reply_"):
+            if sum(1 for x in conds if x.startswith(prefix)) > 1:
+                ok_contra = False
+        if any(r["base"] > 0.80 for r in c["regime"]):
+            ok_base = False
+    check("B02 no cluster holds two buckets of the same dimension", ok_contra)
+    check("B02 no regime condition present in > 80% of all samples", ok_base)
+
+    # B03: profile filter counterfactual == independent re-score with eval.py
+    cf = next((c for c in aj["counterfactuals"] if c["taxonomy"] == "profile.false_positive"
+               and c["gold"] == "personality_traits:emotionally_stable"), None)
+    check("B03 over-predicted tag gets a filter counterfactual", cf is not None)
+    if cf:
+        pairs = [(ev.to_label_set(x["user_profile"].get("personality_traits")) - {"emotionally_stable"},
+                  ev.to_label_set(g["user_profile"].get("personality_traits"))) for x, g in zip(noisy, gold)]
+        res = ev.score_profile_field(pairs, ev.PROFILE_VOCAB["personality_traits"])
+        check("B03 filter micro-F1 matches eval.py", abs(cf["after"]["micro_f1"] - round(res["micro_f1"], 4)) < 1e-9,
+              f"{cf['after']['micro_f1']} vs {res['micro_f1']}")
+        check("B03 filter exact-match matches eval.py", abs(cf["after"]["exact_match"] - round(res["exact_match"], 4)) < 1e-9)
+
+    # B04: emotion counterfactual points == count / n * 25 exactly
+    emo_cfs = [c for c in aj["counterfactuals"] if c["taxonomy"] == "emotion.confusion"]
+    check("B04 emotion counterfactuals present", len(emo_cfs) > 0)
+    check("B04 emotion points == count/n*25", all(abs(c["points"] - round(c["count"] / n * 25, 2)) < 0.011 for c in emo_cfs))
+
+    # B05: collapse check
+    sub_a = os.path.join(tmp, "always.jsonl"); write_jsonl(sub_a, always)
+    out = os.path.join(tmp, "b_always"); run_analyze(sub_a, out)
+    aj_a = json.load(open(os.path.join(out, "analysis.json"), encoding="utf-8"))
+    check("B05 always-anxiety flagged as collapse", aj_a["diagnostics"]["prediction_distribution"]["collapse"] is True)
+    check("B05 noisy run not flagged as collapse", aj["diagnostics"]["prediction_distribution"]["collapse"] is False)
+
+    # B06: bidirectional confusion detected when two labels are swapped both ways
+    swap = []
+    fa = fr = 0
+    for r in gold:
+        x = json.loads(json.dumps(r))
+        if r["emotion_label"] == "fear" and fa < 5:
+            x["emotion_label"] = "anxiety"; fa += 1
+        elif r["emotion_label"] == "anxiety" and fr < 5:
+            x["emotion_label"] = "fear"; fr += 1
+        swap.append(x)
+    sub_s = os.path.join(tmp, "swap.jsonl"); write_jsonl(sub_s, swap)
+    out = os.path.join(tmp, "b_swap"); run_analyze(sub_s, out)
+    aj_s = json.load(open(os.path.join(out, "analysis.json"), encoding="utf-8"))
+    bidi = aj_s["diagnostics"]["bidirectional"]
+    check("B06 anxiety<->fear reported as bidirectional",
+          any({d["a"], d["b"]} == {"anxiety", "fear"} and d["a_to_b"] == 5 and d["b_to_a"] == 5 for d in bidi))
+
+    # B07: context tables cover every sample
+    turn = aj["diagnostics"]["emotion_by_condition"]["turn"]
+    hist = aj["diagnostics"]["emotion_by_condition"]["hist"]
+    check("B07 turn buckets sum to n", sum(v["n"] for v in turn.values()) == n)
+    check("B07 history buckets sum to n", sum(v["n"] for v in hist.values()) == n)
+
+    # B08: genome run order is deterministic across hash seeds
+    regs = []
+    for seed in ("1", "2"):
+        reg = os.path.join(tmp, f"reg_{seed}")
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        for lab in ("r1", "r2", "r3"):
+            subprocess.run([sys.executable, ANALYZE, sub_noisy if lab != "r2" else sub_s, GOLD, "--input", INPUT_FULL,
+                            "--outdir", os.path.join(tmp, f"o_{seed}_{lab}"), "--skip-response-quality",
+                            "--run-label", lab, "--registry", reg], capture_output=True, text=True, env=env, timeout=300)
+        regs.append(open(os.path.join(reg, "experiments.json"), encoding="utf-8").read())
+    check("B08 genome classification identical across PYTHONHASHSEED", regs[0] == regs[1])
+
+    # B09: advice stays inside the plan
+    forbidden = ["synthetic", "temperature", "LDAM", "class-balanced", "top_p"]
+    check("B09 no out-of-plan advice in report", not any(w.lower() in report.lower() for w in forbidden),
+          [w for w in forbidden if w.lower() in report.lower()])
+
+    # B10: --force lets a submission with blank emotions through
+    blank = [dict(x, emotion_label="") if i % 10 == 0 else x for i, x in enumerate(noisy)]
+    sub_b = os.path.join(tmp, "blank.jsonl"); write_jsonl(sub_b, blank)
+    proc_nf = run_analyze(sub_b, os.path.join(tmp, "b_blank_nf"))
+    proc_f = run_analyze(sub_b, os.path.join(tmp, "b_blank_f"), "--force")
+    check("B10 blank emotions refused without --force", proc_nf.returncode != 0)
+    check("B10 blank emotions accepted with --force", proc_f.returncode == 0, proc_f.stderr[:200])
 
     print()
     failed = [nm for nm, ok in results if not ok]

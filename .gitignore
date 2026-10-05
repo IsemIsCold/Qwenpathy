@@ -23,3 +23,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# analyze.py genome registries (local run history)
+.analyze_registry/
