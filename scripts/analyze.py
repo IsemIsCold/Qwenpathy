@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 r"""
-scripts/analyze.py -- Layer 3 DIAGNOSIS v4.0
+scripts/analyze.py -- Layer 3 DIAGNOSIS v4.1
 
 Reads a submission + gold (+ input) and explains WHERE the errors are.
 It never computes official numbers itself: every score comes from eval.py.
 
 v4 (Oct 6) over v3:
   * one signature per error type (taxonomy, gold, pred); context is tallied, not hashed
-  * regimes: a condition is attached to an error group only if it is over-represented
-    there (>= 60% of the group, >= 1.5x its overall rate, <= 80% of all samples)
   * counterfactuals are MEASURED: the fix is applied and re-scored with eval.py
-    (emotion = oracle upper bound; profile false positive = the exact post-filter;
-    profile points shown for both F1 and exact match; no points for replies)
-  * new tables: prediction distribution / collapse check, emotion accuracy by turn and
+  * tables: prediction distribution / collapse check, emotion accuracy by turn and
     history length, bidirectional confusions
   * genome: stable signatures, deterministic run order
   * fix advice limited to what the plan allows (no synthetic data, no temperature)
+
+v4.1 (Oct 6, review fixes):
+  * regimes need a group of >= 8 and a hypergeometric test (Bonferroni p < 0.05):
+    the null test (conditions shuffled 200x) fell from 6.7 "regimes" to 0.05 on n50
+  * --compare: improved / regressed / unchanged vs gold with net deltas (v2.2 semantics)
+  * hypotheses ranked by affected samples; the formula point estimates are gone
+  * counterfactuals in three separate tables: filters (achievable), oracle upper bounds, replies
+  * genome compares only runs on the same gold file (fingerprint) and is hidden without history
 
 Usage:
     python scripts/analyze.py <submission.jsonl> <gold.jsonl> [--input <input.jsonl>]
@@ -27,6 +31,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import os
 import sys
 from collections import Counter, defaultdict
@@ -42,7 +47,7 @@ TEMPLATE_PREFIX_LEN = 30
 SMALL_SAMPLE_FLOOR = 30
 MIN_FINDING_COUNT = 3
 
-# Point weights for severity estimation (official scoring)
+# Official point weights (used only by MEASURED counterfactuals)
 EMOTION_POINTS = 25.0
 PROFILE_POINTS = 15.0
 RESPONSE_POINTS = 20.0
@@ -80,6 +85,10 @@ TAXONOMY = {
     },
     "response": {
         "drift": "CJK ratio below threshold while gold is Chinese",
+        "lang_drift": "Reply mostly non-Chinese while gold is Chinese (CJK ratio < 0.70)",
+        "empty": "Empty reply",
+        "too_long": "Reply > 2x gold length (and >= 60 chars)",
+        "too_short": "Reply < 0.5x gold length (gold >= 30 chars)",
         "length_outlier": "Prediction length far from gold length",
         "template": "Identical/near-identical prefix across samples",
     },
@@ -213,6 +222,18 @@ def load_inputs(submission_path, gold_path, input_path, compare_path=None, force
     return sub, gold, gold_order, conv_id, input_data, compare_sub
 
 
+def short_path(path, parts=3):
+    """Last few path components: submissions are all called submission.jsonl."""
+    comps = os.path.normpath(path).replace("\\", "/").split("/")
+    return "/".join(comps[-parts:])
+
+
+def file_fingerprint(path):
+    """sha256 of the gold file (first 16 hex): the genome only compares runs on the same slice."""
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()[:16]
+
+
 # ---------------------------------------------------------------- per-sample rows
 
 def join_labels(label_set):
@@ -293,14 +314,13 @@ class EmotionAnalyzer:
                 confusion[(r["emotion_gold"], r["emotion_pred"])] += 1
 
         for (g, p), c in confusion.most_common():
-            severity = (c / n) * EMOTION_POINTS
             findings.append(Finding(
                 category="emotion",
                 subcategory="confusion",
-                severity=severity,
+                severity=0.0,
                 count=c,
                 description=f"emotion: {g} misclassified as {p} ({c}x)",
-                impact_note=f"estimated_{severity:.2f}_pts_lost_on_{EMOTION_POINTS}pt_accuracy",
+                impact_note="",
                 example_ids=[r["id"] for r in rows if r["emotion_gold"] == g and r["emotion_pred"] == p][:5],
                 fix_direction=f"Read the examples; '{g}' vs '{p}' is a label-convention question SFT on gold should learn. Check it again after the pilot.",
                 confidence="high" if c >= 30 else "medium",
@@ -312,14 +332,13 @@ class EmotionAnalyzer:
                 wrong = sum(1 for r in rows if r["emotion_gold"] == cls and not r["emotion_correct"])
                 recall = 1 - (wrong / support) if support else 0
                 if recall < 0.3 and support > 0:
-                    severity = (wrong / n) * EMOTION_POINTS
                     findings.append(Finding(
                         category="emotion",
                         subcategory="rare_class",
-                        severity=severity,
+                        severity=0.0,
                         count=wrong,
                         description=f"rare class '{cls}' recall {recall:.2f} (support {support})",
-                        impact_note=f"estimated_{severity:.2f}_pts_lost_on_{EMOTION_POINTS}pt_accuracy",
+                        impact_note="",
                         example_ids=[r["id"] for r in rows if r["emotion_gold"] == cls and not r["emotion_correct"]][:5],
                         fix_direction=f"Low recall on a rare class (support {support}). Check its count in the SFT data; oversampling is a P2 option only.",
                         confidence="high" if wrong >= 10 else "medium",
@@ -333,21 +352,19 @@ class ProfileAnalyzer:
     def analyze(ctx, rows):
         findings = []
         n = ctx.n
-        points_per_field = PROFILE_POINTS / len(FIELDS)
 
         for f in FIELDS:
             short = FIELD_SHORT[f]
             exact = sum(1 for r in rows if r[f"{short}_exact"])
             rate = exact / n
             if rate < 0.90:
-                severity = (1 - rate) * points_per_field
                 findings.append(Finding(
                     category="profile",
                     subcategory="field_weak",
-                    severity=severity,
+                    severity=0.0,
                     count=n - exact,
                     description=f"profile/{f}: exact-match {rate:.3f}",
-                    impact_note=f"estimated_{severity:.2f}_pts_lost_on_{PROFILE_POINTS}pt_profile",
+                    impact_note="",
                     example_ids=[r["id"] for r in rows if not r[f"{short}_exact"]][:5],
                     fix_direction=f"Improve profile extraction prompt for '{f}'; inspect missed labels.",
                     confidence="high" if (n - exact) >= 30 else "medium",
@@ -364,27 +381,25 @@ class ProfileAnalyzer:
                 g_rate = gold_counts.get(lab, 0) / n
                 p_rate = pred_counts.get(lab, 0) / n
                 if g_rate > 0 and p_rate / g_rate > 2.0 and pred_counts[lab] >= SMALL_SAMPLE_FLOOR:
-                    severity = abs(p_rate - g_rate) * points_per_field
                     findings.append(Finding(
                         category="profile",
                         subcategory="bias_over",
-                        severity=severity,
+                        severity=0.0,
                         count=pred_counts[lab],
                         description=f"profile/{f}: over-predicts '{lab}' ({pred_counts[lab]}x vs gold {gold_counts[lab]}x)",
-                        impact_note=f"estimated_{severity:.2f}_pts_lost_on_{PROFILE_POINTS}pt_profile",
+                        impact_note="",
                         example_ids=[r["id"] for r in rows if lab in r[f"{short}_pred"].split("|") and lab not in r[f"{short}_gold"].split("|")][:5],
                         fix_direction=f"Model over-predicts '{lab}'. See the measured filter result in Counterfactual Score Impact before acting.",
                         confidence="medium",
                     ))
                 if g_rate > 0 and g_rate / max(p_rate, 1e-9) > 2.0 and gold_counts[lab] >= SMALL_SAMPLE_FLOOR:
-                    severity = abs(g_rate - p_rate) * points_per_field
                     findings.append(Finding(
                         category="profile",
                         subcategory="bias_under",
-                        severity=severity,
+                        severity=0.0,
                         count=gold_counts[lab],
                         description=f"profile/{f}: under-predicts '{lab}' ({pred_counts[lab]}x vs gold {gold_counts[lab]}x)",
-                        impact_note=f"estimated_{severity:.2f}_pts_lost_on_{PROFILE_POINTS}pt_profile",
+                        impact_note="",
                         example_ids=[r["id"] for r in rows if lab in r[f"{short}_gold"].split("|") and lab not in r[f"{short}_pred"].split("|")][:5],
                         fix_direction=f"Model misses '{lab}'. Expected to improve with SFT; re-check after the pilot.",
                         confidence="medium",
@@ -401,14 +416,13 @@ class ResponseAnalyzer:
 
         drift_rows = [r for r in rows if "LANG_DRIFT" in r["flags"]]
         if drift_rows:
-            severity = (len(drift_rows) / n) * RESPONSE_POINTS
             findings.append(Finding(
                 category="response",
                 subcategory="drift",
-                severity=severity,
+                severity=0.0,
                 count=len(drift_rows),
                 description=f"language drift: {len(drift_rows)} replies below CJK ratio {LANG_DRIFT_THRESHOLD}",
-                impact_note=f"estimated_{severity:.2f}_pts_lost_on_{RESPONSE_POINTS}pt_response",
+                impact_note="",
                 example_ids=[r["id"] for r in drift_rows][:5],
                 fix_direction="Check system-prompt language and SFT data mix; ensure Chinese dominance.",
                 confidence="high" if len(drift_rows) >= 10 else "medium",
@@ -417,27 +431,25 @@ class ResponseAnalyzer:
         long_rows = [r for r in rows if "LONG_PRED" in r["flags"]]
         short_rows = [r for r in rows if "SHORT_PRED" in r["flags"]]
         if long_rows:
-            severity = (len(long_rows) / n) * RESPONSE_POINTS * 0.5
             findings.append(Finding(
                 category="response",
                 subcategory="length_outlier",
-                severity=severity,
+                severity=0.0,
                 count=len(long_rows),
                 description=f"long predictions: {len(long_rows)} replies > 2x gold length",
-                impact_note=f"estimated_{severity:.2f}_pts_lost_on_{RESPONSE_POINTS}pt_response",
+                impact_note="",
                 example_ids=[r["id"] for r in long_rows][:5],
                 fix_direction="Replies much longer than gold cost latency; check reply-length median vs gold (decoding stays greedy).",
                 confidence="high" if len(long_rows) >= 10 else "medium",
             ))
         if short_rows:
-            severity = (len(short_rows) / n) * RESPONSE_POINTS * 0.5
             findings.append(Finding(
                 category="response",
                 subcategory="length_outlier",
-                severity=severity,
+                severity=0.0,
                 count=len(short_rows),
                 description=f"short predictions: {len(short_rows)} replies < 0.5x gold length",
-                impact_note=f"estimated_{severity:.2f}_pts_lost_on_{RESPONSE_POINTS}pt_response",
+                impact_note="",
                 example_ids=[r["id"] for r in short_rows][:5],
                 fix_direction="Replies much shorter than gold. Do NOT add a length rule (EXP-011/012: costs emotion accuracy); SFT learns gold length.",
                 confidence="high" if len(short_rows) >= 10 else "medium",
@@ -448,14 +460,13 @@ class ResponseAnalyzer:
         if degenerate:
             for h, c in degenerate:
                 ex_ids = [r["id"] for r in rows if r["template_hash"] == h][:5]
-                severity = (c / n) * RESPONSE_POINTS
                 findings.append(Finding(
                     category="response",
                     subcategory="template",
-                    severity=severity,
+                    severity=0.0,
                     count=c,
                     description=f"template repetition: {c} samples share prefix hash {h}",
-                    impact_note=f"estimated_{severity:.2f}_pts_lost_on_{RESPONSE_POINTS}pt_response",
+                    impact_note="",
                     example_ids=ex_ids,
                     fix_direction="Read the repeated replies; if real, check the SFT targets for the same opening.",
                     confidence="high" if c >= 10 else "medium",
@@ -493,14 +504,13 @@ class CorrelationAnalyzer:
                 else:
                     marginal *= sum(1 for r in rows if not r[f"{FIELD_SHORT[item]}_exact"]) / n
             if joint_rate > marginal * 1.5:
-                severity = (c / n) * EMOTION_POINTS
                 findings.append(Finding(
                     category="correlation",
                     subcategory="systematic",
-                    severity=severity,
+                    severity=0.0,
                     count=c,
                     description=f"systematic multi-failure: {' + '.join(combo)} co-occur in {c} samples",
-                    impact_note=f"estimated_{severity:.2f}_pts_lost_on_{EMOTION_POINTS}pt_accuracy",
+                    impact_note="",
                     example_ids=[r["id"] for r in rows if all(
                         (not r["emotion_correct"]) if item == "emotion" else (not r[f"{FIELD_SHORT[item]}_exact"])
                         for item in combo
@@ -512,7 +522,7 @@ class CorrelationAnalyzer:
         return findings
 
 # ---------------------------------------------------------------------------
-# v4.0 COMPONENTS
+# v4 COMPONENTS
 #   * signatures keyed on WHAT went wrong (taxonomy, gold, pred), not on context
 #   * regimes = conditions OVER-REPRESENTED inside an error group (lift test),
 #     never a union of conditions
@@ -523,7 +533,12 @@ REGIME_MIN_SHARE = 0.60   # condition present in >= 60% of the group
 REGIME_MIN_LIFT = 1.5     # ... and >= 1.5x its rate over all samples
 REGIME_MAX_BASE = 0.80    # conditions present in > 80% of all samples say nothing
 REGIME_MIN_HITS = 3       # ... and seen in >= 3 samples of the group
+REGIME_MIN_GROUP = 8      # smaller groups are not tested for a regime at all
+REGIME_MAX_P = 0.05       # one-sided hypergeometric p, Bonferroni-corrected per group
 COLLAPSE_SHARE = 0.60     # one emotion label > 60% of predictions = collapse
+CF_TYPES = ("filter", "oracle", "reply")
+CF_PER_TYPE = 8
+MAX_GROUPS_SHOWN = 15
 
 
 class ConditionExtractor:
@@ -630,30 +645,56 @@ class RegimeAnalyzer:
         return {c: k / n for c, k in counts.items()}
 
     @staticmethod
-    def regime_for(sig, ctx, base):
-        inside = Counter(c for sid in sig.sample_ids for c in ctx.conditions.get(sid, []))
-        out = []
-        for cond, hits in inside.items():
-            share = hits / sig.count
-            b = base.get(cond, 0.0)
-            if (hits >= REGIME_MIN_HITS and share >= REGIME_MIN_SHARE and b <= REGIME_MAX_BASE
-                    and b > 0 and share / b >= REGIME_MIN_LIFT):
-                out.append({"condition": cond, "share": round(share, 2), "base": round(b, 2),
-                            "lift": round(share / b, 2)})
-        return sorted(out, key=lambda d: (-d["lift"], d["condition"]))
+    def hypergeom_sf(hits, group, cond_total, n):
+        """P(X >= hits): X = samples with the condition among `group` drawn from n without replacement."""
+        denom = math.comb(n, group)
+        top = min(group, cond_total)
+        return min(1.0, sum(math.comb(cond_total, k) * math.comb(n - cond_total, group - k)
+                            for k in range(hits, top + 1)) / denom)
 
     @staticmethod
-    def build_clusters(signatures, ctx, min_size=3, max_clusters=10):
+    def regime_for(sig, ctx, base):
+        """Over-represented conditions that also pass a significance test.
+
+        Without the test, n=50 produces 'regimes' from pure noise (null test: shuffling
+        conditions across samples gave as many regimes as the real data).
+        """
+        if sig.count < REGIME_MIN_GROUP:
+            return None  # too small to test
+        ids = set(sig.sample_ids)   # a sample can appear once per signature
+        inside = Counter(c for sid in ids for c in ctx.conditions.get(sid, []))
+        k, n = len(ids), ctx.n
+        # reply-length / language conditions DEFINE the response groups: testing them there is circular
+        circular = ("reply_", "lang_drift") if sig.category == "response" else ()
+        tested = [c for c in inside if base.get(c, 0.0) <= REGIME_MAX_BASE and not (circular and c.startswith(circular))]
+        m = max(1, len(tested))     # Bonferroni over the conditions tested for this group
+        out = []
+        for cond in sorted(tested):
+            hits = inside[cond]
+            share = hits / k
+            b = base.get(cond, 0.0)
+            if not (hits >= REGIME_MIN_HITS and share >= REGIME_MIN_SHARE and b > 0
+                    and share / b >= REGIME_MIN_LIFT):
+                continue
+            p = RegimeAnalyzer.hypergeom_sf(hits, k, round(b * n), n) * m
+            if p < REGIME_MAX_P:
+                out.append({"condition": cond, "share": round(share, 2), "base": round(b, 2),
+                            "lift": round(share / b, 2), "p_adj": round(min(p, 1.0), 4)})
+        return sorted(out, key=lambda d: (d["p_adj"], -d["lift"], d["condition"]))
+
+    @staticmethod
+    def build_clusters(signatures, ctx, min_size=3):
         base = RegimeAnalyzer.base_rates(ctx)
         clusters = []
         for sig in signatures:
             if sig.count < min_size:
                 continue
             regime = RegimeAnalyzer.regime_for(sig, ctx, base)
-            sig.conditions = [r["condition"] for r in regime]
+            sig.conditions = [r["condition"] for r in (regime or [])]
             clusters.append({
                 "sig_id": sig.sig_id, "taxonomy": sig.taxonomy, "gold": sig.gold, "pred": sig.pred,
-                "count": sig.count, "regime": regime, "conditions": sig.conditions,
+                "count": sig.count, "regime": regime or [], "regime_tested": regime is not None,
+                "conditions": sig.conditions,
                 "sample_ids": list(sig.sample_ids),
             })
         return clusters  # ranked later by measured impact
@@ -689,7 +730,7 @@ class CounterfactualAnalyzer:
             acc_now = sum(1 for rid in ctx.gold_order
                           if ctx.sub[rid].get("emotion_label") == ctx.gold[rid].get("emotion_label")) / n
             acc_fix = acc_now + len(ids) / n
-            return {"kind": "oracle: every sample in this group labelled correctly",
+            return {"type": "oracle", "kind": "oracle: every sample in this group labelled correctly",
                     "metric": "emotion_accuracy", "before": round(acc_now, 4), "after": round(acc_fix, 4),
                     "points": round((acc_fix - acc_now) * EMOTION_POINTS, 2), "points_exact": None,
                     "action": "fine-tuning target (SFT on gold labels); re-check after the pilot",
@@ -701,6 +742,7 @@ class CounterfactualAnalyzer:
                 # what a post-filter would do: drop the label EVERYWHERE (true positives lost too)
                 f1_fix, ex_fix = CounterfactualAnalyzer._profile_scores(
                     ctx, field, lambda rid, p, g: p - {label})
+                cf_type = "filter"
                 kind = f"filter: drop '{label}' from every prediction"
                 action = (f"post-filter '{label}' in normalize_prediction"
                           if (f1_fix - f1_now) > 0 and (ex_fix - ex_now) >= 0
@@ -708,10 +750,12 @@ class CounterfactualAnalyzer:
             else:
                 f1_fix, ex_fix = CounterfactualAnalyzer._profile_scores(
                     ctx, field, lambda rid, p, g: (p | {label}) if rid in ids else p)
+                cf_type = "oracle"
                 kind = f"oracle: add '{label}' where gold has it (upper bound)"
                 action = "upper bound only; SFT should learn when this label applies"
             w = PROFILE_POINTS / len(FIELDS)
-            return {"kind": kind, "metric": f"profile/{field}",
+            # points assume profile score = mean of the 3 per-field metrics x 15 (5 pts per field)
+            return {"type": cf_type, "kind": kind, "metric": f"profile/{field}",
                     "before": {"micro_f1": round(f1_now, 4), "exact_match": round(ex_now, 4)},
                     "after": {"micro_f1": round(f1_fix, 4), "exact_match": round(ex_fix, 4)},
                     "points": round((f1_fix - f1_now) * w, 2),          # if profile is scored by F1
@@ -721,8 +765,9 @@ class CounterfactualAnalyzer:
         rl_in = [r for r in ctx.rows if r["id"] in ids and r.get("rouge_l") not in ("", None)]
         rl_out = [r for r in ctx.rows if r["id"] not in ids and r.get("rouge_l") not in ("", None)]
         mean = lambda xs: round(sum(float(r["rouge_l"]) for r in xs) / len(xs), 4) if xs else None
-        return {"kind": "no point estimate (official reply composite unknown)",
-                "metric": "rouge_l (group vs rest)", "before": mean(rl_in), "after": mean(rl_out),
+        return {"type": "reply", "kind": "no point estimate (official reply composite unknown)",
+                "metric": "rouge_l (group vs rest)", "before": None, "after": None,
+                "group_rouge_l": mean(rl_in), "rest_rouge_l": mean(rl_out),
                 "points": None, "points_exact": None,
                 "action": "inspect examples", "measured": rl_in != []}
 
@@ -776,7 +821,7 @@ class Genome:
         self.registry_dir = registry_dir
         self.genome_path = os.path.join(registry_dir, "error_genome.json")
         self.experiments_path = os.path.join(registry_dir, "experiments.json")
-        self.data = {"version": "4.0", "runs": [], "signatures": {}}
+        self.data = {"version": "4.1", "runs": [], "run_meta": {}, "signatures": {}}
         self.experiments = {}
         self._load()
 
@@ -786,7 +831,7 @@ class Genome:
                 with open(self.genome_path, "r", encoding="utf-8") as f:
                     self.data = json.load(f)
             except (json.JSONDecodeError, OSError):
-                self.data = {"version": "4.0", "runs": [], "signatures": {}}
+                self.data = {"version": "4.1", "runs": [], "run_meta": {}, "signatures": {}}
         if os.path.exists(self.experiments_path):
             try:
                 with open(self.experiments_path, "r", encoding="utf-8") as f:
@@ -801,112 +846,78 @@ class Genome:
         with open(self.experiments_path, "w", encoding="utf-8") as f:
             json.dump(self.experiments, f, indent=2, ensure_ascii=False)
 
-    def update(self, run_label, signatures, experiment_notes=None):
+    def update(self, run_label, signatures, experiment_notes=None, gold_fp=None, n=None):
         """Add current run signatures to genome. Returns classification.
 
         Classifications are relative to OTHER run_labels only, so rerunning
-        with the same run_label produces stable output.
+        with the same run_label produces stable output. v4.1: only runs scored on
+        the SAME gold file (fingerprint) are compared; others are listed as skipped.
         """
         if not run_label:
             run_label = "unknown"
 
-        novel = []
-        persistent = []
-        regressed = []
-        resolved = []
+        novel, persistent, regressed, resolved = [], [], [], []
 
         current_sig_ids = {sig.sig_id for sig in signatures}
         runs = self.data.setdefault("runs", [])
-        previous_runs = [r for r in runs if r != run_label]   # registration order, deterministic
+        meta = self.data.setdefault("run_meta", {})
+        # registration order, deterministic; same slice only
+        comparable = [r for r in runs if r != run_label and meta.get(r, {}).get("gold_fp") == gold_fp]
+        self.skipped_runs = [r for r in runs if r != run_label and r not in comparable]
+        self.comparable_runs = comparable
+        comp = set(comparable)
 
         for sig in signatures:
             sid = sig.sig_id
             if sid not in self.data["signatures"]:
                 self.data["signatures"][sid] = {
-                    "taxonomy": sig.taxonomy,
-                    "category": sig.category,
-                    "subcategory": sig.subcategory,
-                    "gold": sig.gold,
-                    "pred": sig.pred,
-                    "conditions": [],
-                    "first_seen": run_label,
-                    "last_seen": run_label,
-                    "sample_sets": {},
-                    "count_history": {},
+                    "taxonomy": sig.taxonomy, "category": sig.category, "subcategory": sig.subcategory,
+                    "gold": sig.gold, "pred": sig.pred, "conditions": [],
+                    "first_seen": run_label, "last_seen": run_label,
+                    "sample_sets": {}, "count_history": {},
                 }
+            entry = self.data["signatures"][sid]
+            entry["last_seen"] = run_label
+            history = entry.get("count_history", {})
+            prev = [r for r in comparable if history.get(r, 0) > 0]
+            if not prev:
                 novel.append(sig)
+            elif history.get(comparable[-1], 0) == 0:
+                regressed.append(sig)     # seen before on this slice, absent in the last run, back now
             else:
+                persistent.append(sig)
+            entry["sample_sets"][run_label] = sig.sample_ids
+            entry["count_history"][run_label] = sig.count
+
+        # Resolved: present in the last comparable run, absent now
+        if comparable:
+            last = comparable[-1]
+            for sid in sorted(self.data["signatures"]):
                 entry = self.data["signatures"][sid]
-                entry["last_seen"] = run_label
-                history = entry.get("count_history", {})
-                # Only count OTHER run_labels for persistence
-                prev_runs = [r for r in history if r != run_label]
-                if len(prev_runs) >= 1:
-                    persistent.append(sig)
-                else:
-                    novel.append(sig)
-
-            self.data["signatures"][sid]["sample_sets"][run_label] = sig.sample_ids
-            self.data["signatures"][sid]["count_history"][run_label] = sig.count
-
-        # Resolved: present in last OTHER run, absent now
-        last_other_run = self._get_last_other_run_label(run_label)
-        if last_other_run:
-            for sid, entry in self.data["signatures"].items():
                 if sid in current_sig_ids:
                     continue
-                history = entry.get("count_history", {})
-                if last_other_run in history and history[last_other_run] > 0:
-                    prev_counts = [history.get(r, 0) for r in list(history.keys()) if r != run_label]
-                    solid_history = sum(1 for c in prev_counts if c >= 3) >= 2
-                    if solid_history or len(prev_counts) < 2:
-                        resolved.append(entry)
-
-        # Regressed: was 0 in last OTHER run, back now
-        for sig in signatures:
-            sid = sig.sig_id
-            entry = self.data["signatures"][sid]
-            history = entry.get("count_history", {})
-            prev_runs = [r for r in history if r != run_label]
-            if len(prev_runs) >= 1 and previous_runs:
-                last_count = history.get(previous_runs[-1], 0)
-                if last_count == 0 and sig.count > 0:
-                    if sig in persistent:
-                        persistent.remove(sig)
-                    if sig not in regressed:
-                        regressed.append(sig)
+                if entry.get("count_history", {}).get(last, 0) > 0:
+                    resolved.append(entry)
 
         if run_label not in runs:
             runs.append(run_label)
+        meta[run_label] = {"gold_fp": gold_fp, "n": n}
 
-        # Prune old runs per signature
-        for sid, entry in self.data["signatures"].items():
-            history = entry.get("count_history", {})
-            if len(history) > 20:
-                sorted_runs = sorted(history.keys())
-                to_remove = sorted_runs[:-20]
-                for r in to_remove:
-                    del history[r]
-                    if r in entry.get("sample_sets", {}):
-                        del entry["sample_sets"][r]
+        # Prune: keep the 20 most recent runs (registration order) per signature
+        keep = set(runs[-20:])
+        for entry in self.data["signatures"].values():
+            for key in ("count_history", "sample_sets"):
+                for r in [r for r in entry.get(key, {}) if r not in keep]:
+                    del entry[key][r]
 
-        # Update experiment record (replace if same run_label)
         self.experiments[run_label] = {
             "notes": experiment_notes or "",
-            "signatures": {
-                "novel": len(novel),
-                "persistent": len(persistent),
-                "regressed": len(regressed),
-                "resolved": len(resolved),
-            }
+            "gold_fp": gold_fp,
+            "compared_with": list(comparable),
+            "signatures": {"novel": len(novel), "persistent": len(persistent),
+                           "regressed": len(regressed), "resolved": len(resolved)},
         }
-
-        return {
-            "novel": novel,
-            "persistent": persistent,
-            "regressed": regressed,
-            "resolved": resolved,
-        }
+        return {"novel": novel, "persistent": persistent, "regressed": regressed, "resolved": resolved}
 
     def _get_last_other_run_label(self, current_label):
         previous = [r for r in self.data.get("runs", []) if r != current_label]
@@ -920,7 +931,9 @@ class Genome:
 
 class HypothesisEngine:
     @staticmethod
-    def rank(findings, max_results=7):
+    def rank(findings, max_results=7, n=None):
+        """Rank by affected samples. No point estimates here: measured points live in
+        'Counterfactual Score Impact' (v4.1: the old per-category formulas were removed)."""
         dedup = {}
         for f in findings:
             key = (f.category, f.subcategory, f.description)
@@ -928,7 +941,11 @@ class HypothesisEngine:
                 dedup[key] = f
         filtered = [f for f in dedup.values() if f.count >= MIN_FINDING_COUNT]
 
-        ranked = sorted(filtered, key=lambda f: (-f.severity, -f.count, f.description))
+        for f in filtered:
+            f.severity = round(f.count / n, 4) if n else 0.0
+            f.impact_note = (f"{f.count} samples affected ({f.severity:.0%} of n); "
+                             "measured points: see Counterfactual Score Impact")
+        ranked = sorted(filtered, key=lambda f: (-f.count, f.category, f.description))
         hypotheses = []
         for i, f in enumerate(ranked[:max_results], 1):
             owner = OWNER_MAP.get(f"{f.category}_{f.subcategory}", "prompt_engineering")
@@ -949,15 +966,15 @@ class HypothesisEngine:
 
 def write_report(outdir, ctx, hypotheses, rows, signatures, genome_result,
                  clusters, counterfactuals, run_label, experiment_notes,
-                 has_compare=False):
+                 cmp_summary=None, genome_info=None):
     n = ctx.n
     lines = []
-    lines.append("# Error Analysis Report (analyze.py v4)")
+    lines.append("# Error Analysis Report (analyze.py v4.1)")
     lines.append("")
     lines.append("> Exploratory diagnosis. Scores come from eval.py; regimes are statistical descriptions, "
                  "not causes. Decide on n50 + n50b, never on one slice.")
     lines.append("")
-    lines.append(f"**submission**: `{os.path.basename(getattr(ctx, '_submission_path', 'unknown'))}`  ")
+    lines.append(f"**submission**: `{short_path(getattr(ctx, '_submission_path', 'unknown'))}`  ")
     lines.append(f"**samples**: n = {n}  ")
     lines.append(f"**run_label**: {run_label}  ")
     if experiment_notes:
@@ -996,43 +1013,74 @@ def write_report(outdir, ctx, hypotheses, rows, signatures, genome_result,
             lines.append(f"- **examples**: {', '.join(h.example_ids[:5])}")
         lines.append("")
 
-    # comparative delta (A12)
-    if has_compare:
+    # comparative delta (A12; v4.1: improved/regressed vs gold, v2.2 semantics)
+    if cmp_summary:
+        cs = cmp_summary
         lines.append("## Comparative Delta")
         lines.append("")
-        lines.append("See `delta.csv` for per-sample A/B comparison.")
+        lines.append(f"New = this submission, old = `{cs['old']}`. Improved = wrong before and right now (vs gold); "
+                     "a change from one wrong answer to another wrong answer counts as unchanged. "
+                     "Profile fields use exact match per sample.")
+        lines.append("")
+        lines.append("| Field | Old correct | New correct | Improved | Regressed | Unchanged | Net |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for name, v in cs["fields"].items():
+            lines.append(f"| {name} | {v['old_correct']} | {v['new_correct']} | {v['improved']} | {v['regressed']} | "
+                         f"{v['unchanged']} | {v['net']:+d} |")
+        lines.append("")
+        e = cs["fields"]["emotion"]
+        lines.append(f"Net emotion delta: **{e['net']:+d}** samples "
+                     f"(accuracy {e['old_correct'] / cs['n']:.3f} -> {e['new_correct'] / cs['n']:.3f}); "
+                     f"{cs['emotion_changed']} emotion labels changed in total.")
+        if "rouge_l" in cs:
+            r = cs["rouge_l"]
+            lines.append(f"Per-sample ROUGE-L vs gold: mean {r['mean_old']:.4f} -> {r['mean_new']:.4f} "
+                         f"({r['improved']} up, {r['regressed']} down).")
+        lines.append("")
+        lines.append("_Noise on 50 samples is about +/-7 accuracy points (+/-3-4 samples); decide on n50 + n50b together. "
+                     "Per-sample rows: `delta.csv`._")
         lines.append("")
 
     # v3 taxonomy
     lines.append("## Error Taxonomy")
     lines.append("")
     tax_counts = Counter(s.taxonomy for s in signatures)
-    lines.append("| taxonomy | count | description |")
-    lines.append("|---|---|---|")
-    for tax, count in tax_counts.most_common():
+    tax_samples = Counter()
+    for s_ in signatures:
+        tax_samples[s_.taxonomy] += s_.count
+    lines.append("| taxonomy | distinct error types | occurrences | description |")
+    lines.append("|---|---|---|---|")
+    for tax, count in sorted(tax_counts.items(), key=lambda x: (-tax_samples[x[0]], x[0])):
         cat, sub = tax.split(".", 1)
         desc = TAXONOMY.get(cat, {}).get(sub, "")
-        lines.append(f"| {tax} | {count} | {desc} |")
+        lines.append(f"| {tax} | {count} | {tax_samples[tax]} | {desc} |")
     lines.append("")
 
-    # v3 genome
+    # v3 genome (v4.1: shown only when there is an earlier run on the SAME gold file)
     lines.append("## Error Genome")
     lines.append("")
-    lines.append("| status | count | description |")
-    lines.append("|---|---|---|")
-    for status, sigs in genome_result.items():
-        if status == "resolved":
-            desc = "Was present in previous runs, absent now"
-        elif status == "persistent":
-            desc = "Seen in previous runs, still present"
-        elif status == "regressed":
-            desc = "Was resolved in last run, back now"
-        elif status == "novel":
-            desc = "First time seen"
-        else:
-            desc = ""
-        lines.append(f"| {status} | {len(sigs)} | {desc} |")
-    lines.append("")
+    gi = genome_info or {}
+    if gi.get("skipped_other_slice"):
+        lines.append(f"**Warning:** {len(gi['skipped_other_slice'])} run(s) in this registry were scored on a different "
+                     f"gold file and are ignored: {', '.join(gi['skipped_other_slice'])}.")
+        lines.append("")
+    if not gi.get("compared_with"):
+        lines.append(f"No earlier run on this gold file (fingerprint `{gi.get('gold_fp', '?')}`) in the registry, so "
+                     "nothing to compare. To track error types across models, pass the same `--registry` to every run "
+                     "on the same slice, e.g. `--registry experiments/.analyze_registry`.")
+        lines.append("")
+    else:
+        lines.append(f"Compared with: {', '.join(gi['compared_with'])} (same gold file `{gi['gold_fp']}`).")
+        lines.append("")
+        lines.append("| status | count | description |")
+        lines.append("|---|---|---|")
+        desc = {"novel": "Not seen in earlier runs on this slice",
+                "persistent": "Seen before, still present",
+                "regressed": "Absent in the last run, back now",
+                "resolved": "Present in the last run, absent now"}
+        for status in ("novel", "persistent", "regressed", "resolved"):
+            lines.append(f"| {status} | {len(genome_result.get(status, []))} | {desc[status]} |")
+        lines.append("")
 
     # v4 diagnostic tables
     diag = ctx.diagnostics
@@ -1074,56 +1122,101 @@ def write_report(outdir, ctx, hypotheses, rows, signatures, genome_result,
             lines.append(f"| {d['a']} | {d['b']} | {d['a_to_b']} | {d['b_to_a']} |")
     lines.append("")
 
-    # v4 regimes
+    # v4 regimes (v4.1: significance-tested)
     lines.append("## Error Groups and Regimes")
     lines.append("")
-    lines.append(f"_A regime condition is listed only if it covers >= {REGIME_MIN_SHARE:.0%} of the group, "
-                 f"is >= {REGIME_MIN_LIFT}x more frequent than overall, and appears in <= {REGIME_MAX_BASE:.0%} of all samples._")
+    lines.append(f"_A regime condition is listed only if the group has >= {REGIME_MIN_GROUP} samples, the condition "
+                 f"covers >= {REGIME_MIN_SHARE:.0%} of the group, is >= {REGIME_MIN_LIFT}x more frequent than overall, "
+                 f"appears in <= {REGIME_MAX_BASE:.0%} of all samples, AND passes a one-sided hypergeometric test "
+                 f"(Bonferroni-corrected p < {REGIME_MAX_P}). On a 50-sample slice almost no group is large enough: "
+                 "that is expected, not a bug. Regimes describe, they do not explain._")
     lines.append("")
     if not clusters:
         lines.append("No error group with >= 3 samples.")
     else:
-        lines.append("| error | size | regime (share / overall, lift) |")
+        lines.append("| error | size | regime (share / overall, lift, p_adj) |")
         lines.append("|---|---|---|")
         for c in clusters:
-            reg = "; ".join(f"{r['condition']} ({r['share']:.0%} vs {r['base']:.0%}, x{r['lift']})" for r in c["regime"]) or "none (spread out)"
+            if not c.get("regime_tested"):
+                reg = f"not tested (< {REGIME_MIN_GROUP} samples)"
+            else:
+                reg = "; ".join(f"{r['condition']} ({r['share']:.0%} vs {r['base']:.0%}, x{r['lift']}, p={r['p_adj']})"
+                                for r in c["regime"]) or "none significant (spread out)"
             lines.append(f"| {c['taxonomy']} {c['gold']}{('->' + c['pred']) if c['pred'] else ''} | {c['count']} | {reg} |")
     lines.append("")
 
-    # v4 measured counterfactuals
+    # v4.1 measured counterfactuals, three separate tables
+    fmt = lambda v: "-" if v is None else f"{v:+.2f}"
+    cf_label = lambda c: f"{c['taxonomy']} {c['gold']}{('->' + c['pred']) if c['pred'] else ''}"
+    def prof_ba(im):
+        return (f"F1 {im['before']['micro_f1']:.3f}->{im['after']['micro_f1']:.3f}, "
+                f"exact {im['before']['exact_match']:.3f}->{im['after']['exact_match']:.3f}")
+    by_type = {t: [cf for cf in counterfactuals if cf["impact"]["type"] == t] for t in CF_TYPES}
+
     lines.append("## Counterfactual Score Impact (measured)")
     lines.append("")
-    lines.append("_Each fix is applied to the predictions and re-scored with eval.py. Emotion rows are oracle "
-                 "upper bounds; profile filter rows are exactly what a post-filter would do (true positives "
-                 "lost included). Profile points are shown for both candidate metrics because the official "
-                 "one is unconfirmed. Reply groups get no points: the official composite is unknown._")
-    lines.append("")
-    if not counterfactuals:
-        lines.append("No counterfactuals available.")
-    else:
-        lines.append("| error | fix simulated | before -> after | pts (emotion; profile if F1) | pts (profile if exact) | action |")
-        lines.append("|---|---|---|---|---|---|")
-        for cf in counterfactuals:
-            c, im = cf["cluster"], cf["impact"]
-            label = f"{c['taxonomy']} {c['gold']}{('->' + c['pred']) if c['pred'] else ''}"
-            if isinstance(im["before"], dict):
-                ba = (f"F1 {im['before']['micro_f1']:.3f}->{im['after']['micro_f1']:.3f}, "
-                      f"exact {im['before']['exact_match']:.3f}->{im['after']['exact_match']:.3f}")
-            elif im["before"] is None:
-                ba = "-"
-            else:
-                ba = f"{im['before']}->{im['after']}"
-            fmt = lambda v: "-" if v is None else f"{v:+.2f}"
-            lines.append(f"| {label} | {im['kind']} | {ba} | {fmt(im['points'])} | {fmt(im['points_exact'])} | {im['action']} |")
+    lines.append("_Every number below is a re-score with eval.py after applying the change to the predictions. "
+                 "Profile points assume the official profile score = mean of the three per-field metrics x 15 "
+                 "(5 pts per field); they are shown for micro-F1 and for exact match because the organisers have "
+                 "not confirmed which one is used. The three tables are NOT comparable with each other._")
     lines.append("")
 
-    actionable = [cf for cf in counterfactuals if cf["cluster"]["taxonomy"] == "profile.false_positive"
-                  and (cf["impact"]["points"] or 0) > 0 and (cf["impact"]["points_exact"] or 0) >= 0]
+    lines.append("### A. Achievable now: post-filters")
+    lines.append("")
+    lines.append("_Exactly what dropping the label in `normalize_prediction` would do on this slice, true positives lost included._")
+    lines.append("")
+    if not by_type["filter"]:
+        lines.append("No over-predicted profile label with >= 3 false positives.")
+    else:
+        lines.append("| error | filter | before -> after | pts if F1 | pts if exact | action |")
+        lines.append("|---|---|---|---|---|---|")
+        for cf in by_type["filter"]:
+            c, im = cf["cluster"], cf["impact"]
+            lines.append(f"| {cf_label(c)} ({c['count']}) | {im['kind']} | {prof_ba(im)} | {fmt(im['points'])} | "
+                         f"{fmt(im['points_exact'])} | {im['action']} |")
+    lines.append("")
+
+    lines.append("### B. Upper bounds: oracle (not achievable by a rule)")
+    lines.append("")
+    lines.append("_What a PERFECT fix of the group would give. Use it to see where training can win the most, "
+                 "never as an expected gain._")
+    lines.append("")
+    if not by_type["oracle"]:
+        lines.append("None.")
+    else:
+        lines.append("| error | upper bound | before -> after | pts (emotion, or profile if F1) | pts if exact |")
+        lines.append("|---|---|---|---|---|")
+        for cf in by_type["oracle"]:
+            c, im = cf["cluster"], cf["impact"]
+            ba = prof_ba(im) if isinstance(im["before"], dict) else f"{im['before']}->{im['after']}"
+            lines.append(f"| {cf_label(c)} ({c['count']}) | {im['kind']} | {ba} | {fmt(im['points'])} | {fmt(im['points_exact'])} |")
+    lines.append("")
+
+    lines.append("### C. Reply groups (no points)")
+    lines.append("")
+    lines.append("_The official reply composite (BLEU/ROUGE/BERTScore weights) is unknown, so no points. "
+                 "The columns compare the mean per-sample ROUGE-L inside the group with all other samples; "
+                 "they are not before/after._")
+    lines.append("")
+    if not by_type["reply"]:
+        lines.append("None.")
+    else:
+        lines.append("| error | size | ROUGE-L in group | ROUGE-L rest |")
+        lines.append("|---|---|---|---|")
+        for cf in by_type["reply"]:
+            c, im = cf["cluster"], cf["impact"]
+            g = "-" if im.get("group_rouge_l") is None else f"{im['group_rouge_l']:.3f}"
+            r = "-" if im.get("rest_rouge_l") is None else f"{im['rest_rouge_l']:.3f}"
+            lines.append(f"| {cf_label(c)} | {c['count']} | {g} | {r} |")
+    lines.append("")
+
+    actionable = [cf for cf in by_type["filter"]
+                  if (cf["impact"]["points"] or 0) > 0 and (cf["impact"]["points_exact"] or 0) >= 0]
     lines.append("## Recommended Next Experiment")
     lines.append("")
     if actionable:
         best = actionable[0]
-        c, im = best["cluster"], best["impact"]
+        im = best["impact"]
         lines.append(f"**Cheapest measured win:** {im['action']} "
                      f"({fmt(im['points'])} pts if profile is F1, {fmt(im['points_exact'])} pts if exact match).")
         lines.append("Confirm on a second val slice before shipping: a filter found and measured on one slice overfits it.")
@@ -1153,9 +1246,10 @@ def write_report(outdir, ctx, hypotheses, rows, signatures, genome_result,
 # ---------------------------------------------------------------- analysis.json
 
 def write_analysis_json(outdir, ctx, hypotheses, rows, signatures, genome_result,
-                        clusters, counterfactuals, run_label, experiment_notes):
+                        clusters, counterfactuals, run_label, experiment_notes,
+                        cmp_summary=None, genome_info=None):
     out = {
-        "schema_version": "4.0",
+        "schema_version": "4.1",
         "meta": {
             "submission": getattr(ctx, '_submission_path', ''),
             "run_label": run_label,
@@ -1172,6 +1266,7 @@ def write_analysis_json(outdir, ctx, hypotheses, rows, signatures, genome_result
         },
         "hypotheses": [h.to_dict() for h in hypotheses],
         "genome": {
+            **(genome_info or {}),
             "novel_count": len(genome_result.get("novel", [])),
             "persistent_count": len(genome_result.get("persistent", [])),
             "regressed_count": len(genome_result.get("regressed", [])),
@@ -1182,6 +1277,7 @@ def write_analysis_json(outdir, ctx, hypotheses, rows, signatures, genome_result
             for tax, count in Counter(s.taxonomy for s in signatures).most_common()
         ],
         "diagnostics": ctx.diagnostics,
+        "compare": cmp_summary,
         "clusters": [{k: v for k, v in c.items() if k != "sample_ids"} | {"examples": c["sample_ids"][:5]}
                      for c in clusters],
         "counterfactuals": [
@@ -1199,39 +1295,84 @@ def write_analysis_json(outdir, ctx, hypotheses, rows, signatures, genome_result
 
 # ---------------------------------------------------------------- delta report
 
-def write_delta_csv(outdir, gold, gold_order, sub, compare_sub, skip_rq):
+def build_delta(gold, gold_order, sub, compare_sub, skip_rq):
+    """Per-sample A/B against GOLD. delta = new_correct - old_correct (+1 improved, -1 regressed).
+
+    v4.0 counted any change as a delta; a change from one wrong label to another wrong
+    label is 'unchanged' here (v2.2 semantics restored).
+    """
     rows = []
     for rid in gold_order:
-        sg, cg = sub[rid].get("emotion_label"), compare_sub[rid].get("emotion_label")
-        sg_prof = sub[rid].get("user_profile") if isinstance(sub[rid].get("user_profile"), dict) else {}
-        cg_prof = compare_sub[rid].get("user_profile") if isinstance(compare_sub[rid].get("user_profile"), dict) else {}
+        g = gold[rid]
+        g_prof = g.get("user_profile") if isinstance(g.get("user_profile"), dict) else {}
+        new, old = sub[rid], compare_sub[rid]
+        n_prof = new.get("user_profile") if isinstance(new.get("user_profile"), dict) else {}
+        o_prof = old.get("user_profile") if isinstance(old.get("user_profile"), dict) else {}
         row = {"id": rid}
-        row["emotion_old"] = cg if cg in ev.EMOTIONS else "-"
-        row["emotion_new"] = sg if sg in ev.EMOTIONS else "-"
-        row["emotion_delta"] = 1 if sg != cg else 0
+        eo, en = old.get("emotion_label"), new.get("emotion_label")
+        row["emotion_gold"] = g.get("emotion_label")
+        row["emotion_old"] = eo if eo in ev.EMOTIONS else "-"
+        row["emotion_new"] = en if en in ev.EMOTIONS else "-"
+        row["emotion_old_correct"] = int(eo == g.get("emotion_label"))
+        row["emotion_new_correct"] = int(en == g.get("emotion_label"))
+        row["emotion_delta"] = row["emotion_new_correct"] - row["emotion_old_correct"]
+        row["emotion_changed"] = int(eo != en)
         for f in FIELDS:
             short = FIELD_SHORT[f]
-            row[f"{short}_old"] = join_labels(ev.to_label_set(cg_prof.get(f)))
-            row[f"{short}_new"] = join_labels(ev.to_label_set(sg_prof.get(f)))
-            row[f"{short}_delta"] = 0 if row[f"{short}_old"] == row[f"{short}_new"] else 1
+            gs = ev.to_label_set(g_prof.get(f))
+            os_, ns = ev.to_label_set(o_prof.get(f)), ev.to_label_set(n_prof.get(f))
+            row[f"{short}_gold"] = join_labels(gs)
+            row[f"{short}_old"] = join_labels(os_)
+            row[f"{short}_new"] = join_labels(ns)
+            row[f"{short}_old_exact"] = int(os_ == gs)
+            row[f"{short}_new_exact"] = int(ns == gs)
+            row[f"{short}_delta"] = row[f"{short}_new_exact"] - row[f"{short}_old_exact"]
         if not skip_rq:
-            s_text = sub[rid].get("response_text") or ""
-            c_text = compare_sub[rid].get("response_text") or ""
-            row["rouge_l"] = round(ev.rouge_l_macro([s_text], [c_text]), 3)
+            gt = g.get("response_text") or ""
+            row["rouge_l_old"] = round(ev.rouge_l_macro([old.get("response_text") or ""], [gt]), 3)
+            row["rouge_l_new"] = round(ev.rouge_l_macro([new.get("response_text") or ""], [gt]), 3)
+            row["rouge_l_delta"] = round(row["rouge_l_new"] - row["rouge_l_old"], 3)
         else:
-            row["rouge_l"] = ""
+            row["rouge_l_old"] = row["rouge_l_new"] = row["rouge_l_delta"] = ""
         rows.append(row)
+    return rows
 
+
+DELTA_COLUMNS = (["id", "emotion_gold", "emotion_old", "emotion_new", "emotion_old_correct",
+                  "emotion_new_correct", "emotion_delta", "emotion_changed"]
+                 + [f"{FIELD_SHORT[f]}_{x}" for f in FIELDS
+                    for x in ("gold", "old", "new", "old_exact", "new_exact", "delta")]
+                 + ["rouge_l_old", "rouge_l_new", "rouge_l_delta"])
+
+
+def compare_summary(delta_rows):
+    """Improved / regressed / unchanged per field, vs gold."""
+    n = len(delta_rows)
+    out = {"n": n, "fields": {}}
+    keys = [("emotion", "emotion")] + [(f, FIELD_SHORT[f]) for f in FIELDS]
+    for name, short in keys:
+        d = [r[f"{short}_delta"] for r in delta_rows]
+        old_ok = sum(r[f"{short}_old_correct" if short == "emotion" else f"{short}_old_exact"] for r in delta_rows)
+        new_ok = sum(r[f"{short}_new_correct" if short == "emotion" else f"{short}_new_exact"] for r in delta_rows)
+        imp, reg = d.count(1), d.count(-1)
+        out["fields"][name] = {"improved": imp, "regressed": reg, "unchanged": n - imp - reg,
+                               "net": imp - reg, "old_correct": old_ok, "new_correct": new_ok,
+                               "metric": "accuracy" if name == "emotion" else "exact match"}
+    out["emotion_changed"] = sum(r["emotion_changed"] for r in delta_rows)
+    rl = [r["rouge_l_delta"] for r in delta_rows if r["rouge_l_delta"] != ""]
+    if rl:
+        out["rouge_l"] = {"improved": sum(1 for x in rl if x > 0), "regressed": sum(1 for x in rl if x < 0),
+                          "mean_old": round(sum(r["rouge_l_old"] for r in delta_rows) / n, 4),
+                          "mean_new": round(sum(r["rouge_l_new"] for r in delta_rows) / n, 4)}
+    return out
+
+
+def write_delta_csv(outdir, delta_rows):
     delta_path = os.path.join(outdir, "delta.csv")
-    cols = ["id", "emotion_old", "emotion_new", "emotion_delta"]
-    for f in FIELDS:
-        short = FIELD_SHORT[f]
-        cols += [f"{short}_old", f"{short}_new", f"{short}_delta"]
-    cols.append("rouge_l")
     with open(delta_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=cols)
+        writer = csv.DictWriter(f, fieldnames=DELTA_COLUMNS)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(delta_rows)
     print(f"Wrote {delta_path}")
 
 
@@ -1275,7 +1416,7 @@ def main():
     ap.add_argument("--compare", dest="compare_path", help="Optional old submission JSONL for A/B delta")
     ap.add_argument("--outdir", help="Output directory (default: <submission>.analysis/)")
     ap.add_argument("--mistakes-only", action="store_true",
-                    help="Only emit mistakes.csv (skip full report)")
+                    help="Write only the rows with a mistake to mistakes.csv (report.md and analysis.json still cover all samples)")
     ap.add_argument("--skip-response-quality", action="store_true",
                     help="Skip per-sample BLEU/ROUGE-L in mistakes.csv (faster; for CI/tests)")
     ap.add_argument("--force", action="store_true",
@@ -1322,13 +1463,19 @@ def main():
     for A in analyzers:
         findings.extend(A.analyze(ctx, rows))
 
-    hypotheses = HypothesisEngine.rank(findings)
+    hypotheses = HypothesisEngine.rank(findings, n=len(gold_order))
 
     signatures = SignatureBuilder.build_all(ctx, rows)
 
+    gold_fp = file_fingerprint(args.gold)
     genome = Genome(registry)
-    genome_result = genome.update(run_label, signatures, args.experiment_notes)
+    genome_result = genome.update(run_label, signatures, args.experiment_notes, gold_fp=gold_fp, n=len(gold_order))
     genome.save()
+    genome_info = {"registry": registry, "gold_fp": gold_fp,
+                   "compared_with": genome.comparable_runs, "skipped_other_slice": genome.skipped_runs}
+    if genome.skipped_runs:
+        print(f"WARNING: genome skipped {len(genome.skipped_runs)} run(s) scored on a different gold file: "
+              f"{', '.join(genome.skipped_runs)}", file=sys.stderr)
 
     # per-sample ROUGE-L first: reply-group comparisons need it
     fill_rouge(rows, args.skip_response_quality, sub, gold)
@@ -1340,23 +1487,32 @@ def main():
     }
 
     clusters = RegimeAnalyzer.build_clusters(signatures, ctx)
-    counterfactuals = [{"cluster": c, "impact": CounterfactualAnalyzer.compute_impact(c, ctx)} for c in clusters]
-    counterfactuals.sort(key=lambda cf: (CounterfactualAnalyzer.rank_key(cf), -cf["cluster"]["count"],
-                                         cf["cluster"]["taxonomy"], cf["cluster"]["gold"], cf["cluster"]["pred"]))
-    clusters = [cf["cluster"] for cf in counterfactuals][:12]
-    counterfactuals = counterfactuals[:12]
+    all_cfs = [{"cluster": c, "impact": CounterfactualAnalyzer.compute_impact(c, ctx)} for c in clusters]
+    sort_key = lambda cf: (CounterfactualAnalyzer.rank_key(cf), -cf["cluster"]["count"],
+                           cf["cluster"]["taxonomy"], cf["cluster"]["gold"], cf["cluster"]["pred"])
+    # v4.1: achievable filters, oracle upper bounds and reply groups are ranked SEPARATELY
+    counterfactuals = []
+    for t in CF_TYPES:
+        counterfactuals += sorted([cf for cf in all_cfs if cf["impact"]["type"] == t], key=sort_key)[:CF_PER_TYPE]
+    # groups with a significant regime first, then by size
+    clusters = sorted(clusters, key=lambda c: (not c["regime"], -c["count"], c["taxonomy"], c["gold"], c["pred"]))[:MAX_GROUPS_SHOWN]
 
     write_mistakes_csv(outdir, rows, args.skip_response_quality, sub, gold,
                        mistakes_only=args.mistakes_only)
 
+    cmp_summary = None
     if args.compare_path and compare_sub:
-        write_delta_csv(outdir, gold, gold_order, sub, compare_sub, args.skip_response_quality)
+        delta_rows = build_delta(gold, gold_order, sub, compare_sub, args.skip_response_quality)
+        write_delta_csv(outdir, delta_rows)
+        cmp_summary = compare_summary(delta_rows)
+        cmp_summary["old"] = short_path(args.compare_path)
 
     write_report(outdir, ctx, hypotheses, rows, signatures, genome_result,
                  clusters, counterfactuals, run_label, args.experiment_notes,
-                 args.compare_path and compare_sub)
+                 cmp_summary, genome_info)
     write_analysis_json(outdir, ctx, hypotheses, rows, signatures, genome_result,
-                        clusters, counterfactuals, run_label, args.experiment_notes)
+                        clusters, counterfactuals, run_label, args.experiment_notes,
+                        cmp_summary, genome_info)
 
 
 if __name__ == "__main__":
