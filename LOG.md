@@ -4,7 +4,7 @@
 
 | # | Date | Commit | Model + prompt | Val score (eval.py) | Official score | Notes |
 |---|---|---|---|---|---|---|
-| 1 | | | | | | |
+| 1 | 2026-10-04 | `e5209d2` + config fix (push pending) | Qwen3-8B non-thinking, vLLM TP2 32k, official prompt V0, greedy. Image `npu-ic-qwen3-8b-v0` / `v20261004225439` | acc 0.48, macro-F1 0.198, ROUGE-L 0.173, BLEU-4 0.021, profile micro-F1 0.262 (API V0: 0.50) | pending | Latency on Migu 2×4090: mean 1.41 s, median 1.40 s, max 2.01 s; vLLM start-up 109 s cold / 51 s warm; 0 parse failures |
 | 2 | | | | | | |
 | 3 | | | | | | |
 | 4 | | | | | | |
@@ -21,7 +21,7 @@
 
 | Date | Who | Job | Estimated | Actual | Remaining |
 |---|---|---|---|---|---|
-| | | | | | 20 (unused as of Oct 4) |
+| 2026-10-04 | Ismail F. | B7: create instance, no-GPU setup + model download, GPU smoke (9) + val50 run, save image, upload | ~0.6 | 1.33 (29.99 → 28.67; the voucher was 30, not 20) | 28.67 |
 
 **AutoDL (team-paid)**
 

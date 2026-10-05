@@ -14,7 +14,16 @@ API_KEY="${VLLM_API_KEY:-}"
 START_TIMEOUT="${VLLM_START_TIMEOUT:-600}"
 PYTHON_CMD="${PYTHON_BIN:-python3}"
 VLLM_BIN="${VLLM_BIN:-vllm}"
-VLLM_ARGS=(--tensor-parallel-size 2 --max-model-len 32768 --gpu-memory-utilization 0.90)  # Qwen3-8B bf16; 32k so the longest histories never get an HTTP 400
+# Qwen3-8B bf16, 32k context so the longest histories never get an HTTP 400.
+# Tensor parallelism follows the GPUs actually present (eval hardware unconfirmed).
+NGPU="$(nvidia-smi -L 2>/dev/null | grep -c GPU || true)"
+if [[ "${NGPU:-0}" -ge 2 ]]; then
+  VLLM_ARGS=(--tensor-parallel-size 2 --max-model-len 32768 --gpu-memory-utilization 0.90)
+else
+  # 1 GPU: fp8 KV cache so a full 32k request still fits next to 16 GB of weights
+  VLLM_ARGS=(--tensor-parallel-size 1 --max-model-len 32768 --gpu-memory-utilization 0.92 --kv-cache-dtype fp8)
+fi
+echo "GPUs detected: ${NGPU:-0} -> vLLM args: ${VLLM_ARGS[*]}"
 
 if [[ $# -ne 2 ]]; then
   echo "用法: $0 TEST_FILE RESULT_DIR" >&2
@@ -90,7 +99,8 @@ CLIENT_HOST="$HOST"
 [[ "$CLIENT_HOST" == "0.0.0.0" || "$CLIENT_HOST" == "::" ]] && CLIENT_HOST="127.0.0.1"
 BASE_URL="http://$CLIENT_HOST:$PORT/v1"
 HEALTH_URL="http://$CLIENT_HOST:$PORT/health"
-LOG_FILE="$(mktemp "${TMPDIR:-/tmp}/competition-vllm.XXXXXX.log")"
+mkdir -p "$RESULT_DIR"
+LOG_FILE="$RESULT_DIR/vllm_server.log"   # kept next to the results so a failed run leaves evidence
 
 COMMAND=(
   "$VLLM_BIN" serve "$MODEL_DIR"
