@@ -127,7 +127,7 @@ def build_config(base_cfg, args, spec):
 
 # ------------------------------------------------------------------ streaming client
 
-def stream_completion(url, payload, key, timeout):
+def _stream_once(url, payload, key, timeout):
     """POST with stream=True; return (content, reasoning) strings."""
     request = urllib.request.Request(
         url,
@@ -155,10 +155,31 @@ def stream_completion(url, payload, key, timeout):
                     reasoning.append(delta.get("reasoning_content") or "")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        if exc.code == 429 or exc.code >= 500:
+            raise _Retryable(f"HTTP {exc.code}: {detail[:200]}") from exc
         raise RuntimeError(f"API request failed: HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"Cannot reach {url}: {exc.reason}") from exc
+        raise _Retryable(f"Cannot reach {url}: {exc.reason}") from exc
+    except OSError as exc:  # SSL EOF, connection reset, timeout while reading the stream
+        raise _Retryable(f"Connection dropped ({type(exc).__name__}): {exc}") from exc
     return "".join(content), "".join(reasoning)
+
+
+class _Retryable(Exception):
+    """Network drop or 429/5xx: worth retrying."""
+
+
+def stream_completion(url, payload, key, timeout, retries=5):
+    """_stream_once with retries and backoff (5, 10, 20, 40, 60 s) for flaky VPN connections."""
+    for attempt in range(retries + 1):
+        try:
+            return _stream_once(url, payload, key, timeout)
+        except _Retryable as exc:
+            if attempt == retries:
+                raise RuntimeError(f"{exc} (gave up after {retries} retries)") from exc
+            wait = min(60, 5 * 2 ** attempt)
+            print(f"   ! {exc} -> retry {attempt + 1}/{retries} in {wait} s", flush=True)
+            time.sleep(wait)
 
 
 def run_streaming(official, cfg, input_file, res_dir, key, soft_tag):

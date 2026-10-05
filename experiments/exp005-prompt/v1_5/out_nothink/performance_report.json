@@ -1,0 +1,11 @@
+{
+  "version": "exp3_streaming (official prompt, history format and parser)",
+  "api_model": "Qwen/Qwen3-8B:nscale",
+  "base_url": "https://router.huggingface.co/v1",
+  "samples": 50,
+  "average_latency_ms": 2611.376,
+  "median_latency_ms": 2253.011,
+  "avg_reasoning_chars": 0.0,
+  "parse_failure_count": 0,
+  "parse_failure_ids": []
+}

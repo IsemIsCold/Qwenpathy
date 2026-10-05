@@ -44,6 +44,12 @@ SYSTEM_PROMPT = """你正在参加数字情感陪伴比赛。根据截止到最�
 personality_traits: {personality}
 interests: {interests}
 style: {styles}
+
+User profile rules:
+- personality_traits: inferred stable personality traits of the user. Leave [] if insufficient information.
+- interests: user hobbies, topics they like. Leave [] if insufficient information.
+- style: communication style of the user. Leave [] if insufficient information.
+Do NOT invent facts. Only extract information present in conversation. If nothing known, set each to empty list [].
 """
 
 
@@ -268,13 +274,58 @@ def recover_response_text(text: str) -> str:
     return cleaned
 
 
+# Tags the base model predicts on almost every sample but gold rarely uses
+# (V0 on val n50: emotionally_stable 47 vs 2, study_exam 36 vs 0, colloquial 38 vs 3).
+# Dropping them raised profile micro-F1 0.275 -> 0.360 offline (EXP-013).
+OVERPREDICTED_TAGS = {
+    "personality_traits": {"emotionally_stable"},
+    "interests": {"study_exam"},
+    "style": {"colloquial"},
+}
+
+
+# The model sometimes invents an emotion outside the 16 labels ("frustration",
+# "annoyance", "hopefulness" on val n50b: 3/50). A blank label always scores 0,
+# so map common inventions to the closest official label, else fall back to
+# "anxiety" (the most frequent class, ~1/3 of val).
+EMOTION_ALIASES = {
+    "frustration": "anger", "frustrated": "anger", "annoyance": "anger", "annoyed": "anger",
+    "irritation": "anger", "irritated": "anger", "rage": "anger", "resentment": "anger",
+    "worry": "anxiety", "worried": "anxiety", "nervous": "anxiety", "nervousness": "anxiety",
+    "stress": "anxiety", "stressed": "anxiety", "anxious": "anxiety", "unease": "anxiety",
+    "scared": "fear", "afraid": "fear", "terror": "fear", "panic": "fear",
+    "sad": "sadness", "grief": "sadness", "disappointment": "sadness", "disappointed": "sadness",
+    "depression": "sadness", "sorrow": "sadness", "hurt": "sadness",
+    "lonely": "loneliness", "isolation": "loneliness",
+    "happy": "joy", "happiness": "joy", "excitement": "joy", "excited": "joy",
+    "thankful": "gratitude", "grateful": "gratitude", "thanks": "gratitude",
+    "calm": "relaxed", "content": "relaxed", "contentment": "relaxed", "hopefulness": "relaxed",
+    "hope": "relaxed", "hopeful": "relaxed", "relief": "relaxed", "peaceful": "relaxed",
+    "embarrassment": "shame", "embarrassed": "shame", "guilt": "shame", "guilty": "shame",
+    "helpless": "helplessness", "powerless": "helplessness", "hopelessness": "helplessness",
+    "confusion": "mixed", "confused": "mixed", "ambivalence": "mixed",
+    "proud": "pride", "surprised": "surprise", "shock": "surprise", "disgusted": "disgust",
+    "concern": "care", "caring": "care", "empathy": "care",
+}
+EMOTION_FALLBACK = "anxiety"
+
+
+def clean_emotion_label(emotion: Any) -> str:
+    if not isinstance(emotion, str):
+        return EMOTION_FALLBACK
+    label = emotion.strip().lower()
+    if label in EMOTIONS:
+        return label
+    return EMOTION_ALIASES.get(label, EMOTION_FALLBACK)
+
+
 def normalize_prediction(sample_id: str, raw: dict[str, Any]) -> dict[str, Any]:
     response = raw.get("response_text")
     emotion = raw.get("emotion_label")
     profile = raw.get("user_profile")
     memories = raw.get("memory_refs")
     clean_response = response.strip() if isinstance(response, str) else ""
-    clean_emotion = emotion if isinstance(emotion, str) and emotion in EMOTIONS else ""
+    clean_emotion = clean_emotion_label(emotion)
     profile = profile if isinstance(profile, dict) else {}
     clean_profile: dict[str, list[str]] = {}
     for name, allowed in PROFILE_LABELS.items():
@@ -286,6 +337,7 @@ def normalize_prediction(sample_id: str, raw: dict[str, Any]) -> dict[str, Any]:
             and set(values) <= allowed
         )
         clean_profile[name] = values if valid else []
+        clean_profile[name] = [v for v in clean_profile[name] if v not in OVERPREDICTED_TAGS.get(name, ())]
     valid_memories = (
         isinstance(memories, list)
         and all(isinstance(value, str) and MEMORY_RE.fullmatch(value) for value in memories)
