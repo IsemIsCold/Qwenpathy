@@ -39,8 +39,8 @@ After **Oct 18** there are no risky changes. A worse final submission replaces a
 
 ## 4. Compute
 
-- **Migu (咪咕 Mīgū):** 20 free card-hours for the whole team. A 2-GPU instance probably burns **2 card-hours per hour**. Use 无卡开机 (wú kǎ kāijī, start without GPU) for setup and file copying.
-- **AutoDL:** team-paid, for training.
+- **Migu (咪咕 Mīgū):** 30 free card-hours for the whole team (28.67 left on Oct 5). It is our **only** GPU: training, evals and submissions all run here. A 2-GPU instance probably burns **2 card-hours per hour**. Use 无卡开机 (wú kǎ kāijī, start without GPU) for setup, downloads and file copying, and turn the GPU off as soon as a job ends. Budget: see TASKS.md Phase 3a.
+- **AutoDL:** not used (decision Oct 5).
 - **Before any GPU job**, write the estimated hours in LOG.md. Afterwards, write the actual hours.
 - Debug first on CPU, with a tiny model (Qwen2.5-0.5B) and 5–50 samples. A GPU is only for jobs that already work on a small scale.
 

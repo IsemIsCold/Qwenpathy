@@ -67,6 +67,13 @@ def load_inference_module(path):
     for name in ("SYSTEM_PROMPT", "EMOTIONS", "PROFILE_LABELS", "conversation_text", "normalize_prediction"):
         if not hasattr(module, name):
             sys.exit(f"{path} has no '{name}'. Is this the official run_inference.py?")
+    # V1.8+ post-processing is for the *base* model's habits (inference only).
+    # Gold labels must reach training untouched: with the tag filter active,
+    # build_target would see gold != parsed and silently drop every example
+    # that contains emotionally_stable / study_exam / colloquial.
+    if hasattr(module, "OVERPREDICTED_TAGS"):
+        print(f"note: disabling OVERPREDICTED_TAGS for training targets ({module.OVERPREDICTED_TAGS})")
+        module.OVERPREDICTED_TAGS = {}
     if '", ".join(EMOTIONS)' in Path(path).read_text(encoding="utf-8"):
         print('WARNING: the inference script uses ", ".join(EMOTIONS), whose order is random per run.\n'
               '         Change it to ", ".join(sorted(EMOTIONS)) so training and inference prompts match.')

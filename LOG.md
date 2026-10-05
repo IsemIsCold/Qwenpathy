@@ -23,10 +23,7 @@
 |---|---|---|---|---|---|
 | 2026-10-04 | Ismail F. | B7: create instance, no-GPU setup + model download, GPU smoke (9) + val50 run, save image, upload | ~0.6 | 1.33 (29.99 → 28.67; the voucher was 30, not 20) | 28.67 |
 
-**AutoDL (team-paid)**
-
-| Date | Who | GPU | Job | Hours | Cost (¥) |
-|---|---|---|---|---|---|
+**AutoDL:** not used (decision Oct 5): all training and evals run on Migu.
 
 **API experiments (development only, never in the submission)**
 

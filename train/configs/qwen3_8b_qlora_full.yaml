@@ -1,0 +1,48 @@
+# Full run (T7). Only after the pilot passes the T6 gate.
+### model
+model_name_or_path: /mnt/storage/models/Qwen3-8B     # adjust to the real path
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+quantization_bit: 4
+quantization_method: bitsandbytes     # NF4, double quantization on by default
+
+### dataset
+dataset_dir: data/sft
+dataset: migu_train
+eval_dataset: migu_dev
+template: qwen3_nothink
+cutoff_len: 4096
+preprocessing_num_workers: 8
+overwrite_cache: true
+
+### output
+output_dir: saves/qwen3-8b/full
+logging_steps: 10
+save_steps: 250        # ~ a quarter of total steps; set from build_report.json
+plot_loss: true
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8        # × 2 GPUs = effective batch 16
+learning_rate: 1.0e-4
+num_train_epochs: 1.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+optim: paged_adamw_8bit
+bf16: true
+ddp_timeout: 180000000
+
+### eval
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 250
+max_eval_samples: 200
