@@ -4,7 +4,7 @@
 |---|---|
 | **Date** | 2026-10-05 |
 | **Author** | Ismail F. |
-| **Goal** | Does a better system prompt beat the official one on Qwen3-8B (non-thinking)? |
+| **Goal** | Does a better system prompt beat the official one on Qwen3-8B (non-thinking)? This folder is the overview + all run outputs; each later experiment also has its own folder (EXP-006 to EXP-016). |
 | **Status** | V0, V1, V1.3–V1.7 done (V1.2 built, not run). Emotion prompt work stopped (no variant beats V0). **V1.7 confirmed on n50b (EXP-016). Submission #2 = V1.8 (= V1.7 + emotion alias map).** Next: V2 (fine-tuning). |
 
 ## Setup
@@ -27,12 +27,12 @@ python scripts\exp3_compare.py --participant participant_v1 `
 | V1.2 | V1 without the base-rate line (`participant_v1_2/`) | built, **not run** |
 | — | Ismail M.'s own prompts: thinking mode, ablation, emotion-focused | [EXP-006](../exp006-think-8b/README.md), [EXP-007](../exp007-prompt-ablation/README.md), [EXP-008](../exp008-fix-emotion-prompt/README.md) |
 | — | Ismail M.'s English prompt: 16 emotion definitions, "do NOT default to anxiety", "DO NOT output empty lists by default", length rule (~200 chars, ≥180) | [EXP-009](../exp009-profile-fix-prompt/README.md) (his run) |
-| V1.3 | V0 + EXP-009's profile rules + length rule, verbatim; V0's "prefer empty arrays" line removed | EXP-010 |
-| V1.4 | V0 + length rule only | EXP-011 |
-| V1.5 | V1.4 + V1's field order | EXP-012 |
-| — | offline: drop over-predicted tags from V0's output | EXP-013 |
-| V1.6 | Ismail M.'s 2nd prompt + 3 fixes (no `""` emotion, profile vocab added, memory_refs []) | EXP-014 |
-| V1.7 | V0 + V1.6's "Leave [] if insufficient information" profile lines + over-predicted tag filter in `normalize_prediction` | EXP-015 (n50), EXP-016 (n50b) |
+| V1.3 | V0 + EXP-009's profile rules + length rule, verbatim; V0's "prefer empty arrays" line removed | [EXP-010](../exp010-v1-3-profile-length/README.md) |
+| V1.4 | V0 + length rule only | [EXP-011](../exp011-v1-4-length-rule/README.md) |
+| V1.5 | V1.4 + V1's field order | [EXP-012](../exp012-v1-5-emotion-first/README.md) |
+| — | offline: drop over-predicted tags from V0's output | [EXP-013](../exp013-profile-tag-filter/README.md) |
+| V1.6 | Ismail M.'s 2nd prompt + 3 fixes (no `""` emotion, profile vocab added, memory_refs []) | [EXP-014](../exp014-v1-6-ismail-m-prompt/README.md) |
+| V1.7 | V0 + V1.6's "Leave [] if insufficient information" profile lines + over-predicted tag filter in `normalize_prediction` | [EXP-015](../exp015-v1-7-combined/README.md) (n50), [EXP-016](../exp016-n50b-confirmation/README.md) (n50b) |
 | **V1.8** | V1.7 + `EMOTION_ALIASES` (invented labels → closest official label, fallback anxiety). Parser-only, prompt = V1.7. `participant_v1_8/` | **frozen prompt; submission #2 fallback** |
 
 ## Results
