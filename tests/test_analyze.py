@@ -3,7 +3,13 @@
 tests/test_analyze.py -- test suite for analyze.py (Layer 3 diagnosis).
 
 Run:  python tests/test_analyze.py [repo-root]
-Needs scripts/{validate,eval,analyze}.py and the four data/*.jsonl files.
+
+DATA REQUIREMENT: the tests run on the FULL validation set, which is gitignored:
+    data/val_gold.jsonl   and   data/val_input.jsonl   (2,354 points each)
+Build them once from the organiser package with scripts/convert_val.py (see
+docs/how-to.md). They are NOT the n50 / n50b slices. Without them the suite stops
+with a clear message instead of a traceback. Also needs scripts/{validate,eval,analyze}.py.
+Runtime: about 1-2 minutes.
 
 The A07 alignment test is the one to show external reviewers: it proves the
 per-sample counts in mistakes.csv are IDENTICAL to the official metrics that
@@ -52,6 +58,12 @@ def read_csv(path):
 
 
 def main():
+    missing = [p for p in (GOLD, INPUT_FULL, EVAL, ANALYZE) if not os.path.exists(p)]
+    if missing:
+        print("Missing files (see the DATA REQUIREMENT note at the top of this file):")
+        for p in missing:
+            print("  -", p)
+        sys.exit(2)
     gold = [json.loads(l) for l in open(GOLD, encoding="utf-8")]
     tmp = tempfile.mkdtemp(prefix="analyze_")
 
@@ -172,7 +184,7 @@ def main():
     out = os.path.join(tmp, "a09")
     proc = run_analyze(sub, out, "--metrics", metrics_path)
     analysis_json = json.load(open(os.path.join(out, "analysis.json"), encoding="utf-8"))
-    check("A09 analysis.json schema_version present", analysis_json.get("schema_version") == "4.0")
+    check("A09 analysis.json schema_version present", analysis_json.get("schema_version") == "4.1")
     check("A09 analysis.json has meta", "meta" in analysis_json and "submission" in analysis_json["meta"])
     check("A09 analysis.json has summary", "summary" in analysis_json)
     check("A09 analysis.json has hypotheses", "hypotheses" in analysis_json)
@@ -220,7 +232,8 @@ def main():
     rare_hyp = next((h for h in hyps if "surprise" in h["description"].lower()), None)
     check("A11 rare-class error appears in hypotheses", rare_hyp is not None)
     if rare_hyp:
-        check("A11 rare-class hypothesis has estimated impact note", "estimated" in rare_hyp["impact_note"])
+        check("A11 rare-class hypothesis impact note = affected samples, no formula points",
+              "samples affected" in rare_hyp["impact_note"] and "pts" not in rare_hyp["impact_note"])
 
     # A12: comparative mode (--compare)
     sub_new = os.path.join(tmp, "always.jsonl")
@@ -245,9 +258,14 @@ def main():
     delta_rows = read_csv(os.path.join(out, "delta.csv"))
     check("A12 delta.csv has all rows", len(delta_rows) == n)
     emo_improved = sum(1 for d in delta_rows if d["emotion_delta"] == "1")
-    check("A12 delta shows emotion improvements", emo_improved >= 50, f"{emo_improved}")
+    emo_regressed = sum(1 for d in delta_rows if d["emotion_delta"] == "-1")
+    check("A12 delta shows exactly the 50 emotion improvements (vs gold)", emo_improved == 50, f"{emo_improved}")
+    check("A12 no emotion regressions", emo_regressed == 0, f"{emo_regressed}")
+    check("A12 delta.csv has old/new correctness columns",
+          {"emotion_old_correct", "emotion_new_correct", "pt_old_exact", "pt_new_exact"} <= set(delta_rows[0]))
     report = open(os.path.join(out, "report.md"), encoding="utf-8").read()
     check("A12 report has comparative section", "Comparative Delta" in report)
+    check("A12 report states net emotion delta", "Net emotion delta: **+50**" in report)
 
     # A13: owner map override via CLI
     # Use a submission with emotion errors but varied, gold-length replies so
@@ -484,6 +502,128 @@ def main():
     proc_f = run_analyze(sub_b, os.path.join(tmp, "b_blank_f"), "--force")
     check("B10 blank emotions refused without --force", proc_nf.returncode != 0)
     check("B10 blank emotions accepted with --force", proc_f.returncode == 0, proc_f.stderr[:200])
+
+    # ------------------------------------------------------------- v4.1 tests (review fixes)
+    print("== v4.1 tests ==")
+    import analyze as an41
+    import importlib
+    importlib.reload(an41)
+    inputs = [json.loads(l) for l in open(INPUT_FULL, encoding="utf-8")]
+    turn_of = {r["id"]: r["target_user_turn_id"] for r in inputs}
+
+    # C01: regimes on a 50-sample slice are not produced by noise (null test)
+    g50 = os.path.join(tmp, "gold50.jsonl"); write_jsonl(g50, gold[:50])
+    i50 = os.path.join(tmp, "input50.jsonl"); write_jsonl(i50, [r for r in inputs if r["id"] in {g["id"] for g in gold[:50]}])
+    s50 = os.path.join(tmp, "noisy50.jsonl"); write_jsonl(s50, noisy[:50])
+    sub_, gold_, order_, conv_, inp_, _ = an41.load_inputs(s50, g50, i50)
+    rows_ = [an41.build_row(r, sub_, gold_, conv_) for r in order_]
+    ctx_ = an41.AnalysisContext(sub_, gold_, order_, conv_, inp_)
+    sigs_ = an41.SignatureBuilder.build_all(ctx_, rows_)
+    ids_, vals_ = list(ctx_.conditions), list(ctx_.conditions.values())
+    rng2 = random.Random(0); null_regimes = 0
+    for _ in range(50):
+        rng2.shuffle(vals_); ctx_.conditions = dict(zip(ids_, vals_))
+        null_regimes += sum(1 for c in an41.RegimeAnalyzer.build_clusters(sigs_, ctx_) if c["regime"])
+    check("C01 null test: shuffled conditions give < 0.5 regimes per run on n=50", null_regimes / 50 < 0.5,
+          f"{null_regimes / 50:.2f}")
+    small = [c for c in an41.RegimeAnalyzer.build_clusters(sigs_, ctx_) if c["count"] < an41.REGIME_MIN_GROUP]
+    check("C01 groups below the minimum size are marked untested", all(not c["regime_tested"] for c in small))
+
+    # C02: a planted regime is found, with a p-value; a spread-out group gets none
+    planted = []
+    rng3 = random.Random(3)
+    joy_ids = set(rng3.sample([r["id"] for r in gold if r["emotion_label"] not in ("anxiety", "joy")], 40))
+    for r in gold:
+        x = json.loads(json.dumps(r))
+        if r["emotion_label"] == "anxiety" and turn_of[r["id"]] <= 3:
+            x["emotion_label"] = "sadness"
+        elif r["id"] in joy_ids:
+            x["emotion_label"] = "joy"
+        planted.append(x)
+    sub_p = os.path.join(tmp, "planted.jsonl"); write_jsonl(sub_p, planted)
+    out = os.path.join(tmp, "c02"); run_analyze(sub_p, out)
+    aj_p = json.load(open(os.path.join(out, "analysis.json"), encoding="utf-8"))
+    grp = next((c for c in aj_p["clusters"] if c["gold"] == "anxiety" and c["pred"] == "sadness"), None)
+    check("C02 planted group found", grp is not None)
+    if grp:
+        check("C02 planted regime = turn_1_3 with p_adj < 0.05",
+              any(r["condition"] == "turn_1_3" and r["p_adj"] < 0.05 for r in grp["regime"]), grp["regime"])
+    spread = [c for c in aj_p["clusters"] if c["pred"] == "joy" and c["regime_tested"]]
+    check("C02 random 40-sample error set gets no turn/history regime",
+          all(not any(r["condition"].startswith(("turn_", "hist_")) for r in c["regime"]) for c in spread))
+
+    # C03: compare mode -- wrong->wrong is unchanged, right->wrong is regressed
+    old_ = always
+    new_ = []
+    ww = rw = 0
+    for r, a in zip(gold, always):
+        x = dict(a)
+        if r["emotion_label"] not in ("anxiety", "fear") and ww < 10:
+            x["emotion_label"] = "fear"; ww += 1          # wrong -> wrong
+        elif r["emotion_label"] == "anxiety" and rw < 5:
+            x["emotion_label"] = "fear"; rw += 1          # right -> wrong
+        new_.append(x)
+    s_old = os.path.join(tmp, "c03_old.jsonl"); write_jsonl(s_old, old_)
+    s_new = os.path.join(tmp, "c03_new.jsonl"); write_jsonl(s_new, new_)
+    out = os.path.join(tmp, "c03"); run_analyze(s_new, out, "--compare", s_old)
+    aj_c = json.load(open(os.path.join(out, "analysis.json"), encoding="utf-8"))
+    e = aj_c["compare"]["fields"]["emotion"]
+    check("C03 wrong->wrong not counted as improved", e["improved"] == 0, e)
+    check("C03 right->wrong counted as regressed (net -5)", e["regressed"] == 5 and e["net"] == -5, e)
+    check("C03 changed labels counted separately", aj_c["compare"]["emotion_changed"] == 15)
+    rep_c = open(os.path.join(out, "report.md"), encoding="utf-8").read()
+    check("C03 report has the improved/regressed table", "| Field | Old correct | New correct | Improved | Regressed |" in rep_c)
+
+    # C04: hypotheses carry no formula points and are ranked by affected samples
+    hy = aj["hypotheses"]
+    check("C04 no formula point estimates in hypotheses",
+          all("estimated" not in h["impact_note"] and "pts_lost" not in h["impact_note"] for h in hy))
+    check("C04 hypotheses ranked by affected samples", all(hy[i]["count"] >= hy[i + 1]["count"] for i in range(len(hy) - 1)))
+
+    # C05: counterfactuals split into filter / oracle / reply
+    types = {c["type"] for c in aj["counterfactuals"]}
+    check("C05 every counterfactual has a type", types <= {"filter", "oracle", "reply"} and types)
+    for h in ("### A. Achievable now: post-filters", "### B. Upper bounds: oracle", "### C. Reply groups (no points)"):
+        check(f"C05 report has '{h[:20]}...'", h in report)
+    check("C05 filters listed before oracle rows in analysis.json",
+          [c["type"] for c in aj["counterfactuals"]] == sorted([c["type"] for c in aj["counterfactuals"]],
+                                                              key=["filter", "oracle", "reply"].index))
+    reply_cfs = [c for c in aj["counterfactuals"] if c["type"] == "reply"]
+    check("C05 reply rows have group/rest ROUGE-L, not before/after",
+          all(c["before"] is None and "group_rouge_l" in c and "rest_rouge_l" in c for c in reply_cfs))
+    check("C05 report states the profile F1 assumption", "mean of the three per-field metrics x 15" in report)
+
+    # C06: genome hidden without history, same-slice only, warns on a different slice
+    reg = os.path.join(tmp, "reg_c06")
+    o1 = os.path.join(tmp, "c06a"); run_analyze(sub_noisy, o1, "--registry", reg, "--run-label", "m1")
+    r1 = open(os.path.join(o1, "report.md"), encoding="utf-8").read()
+    check("C06 first run: genome table hidden, explains why", "No earlier run on this gold file" in r1 and "| novel |" not in r1)
+    o2 = os.path.join(tmp, "c06b"); run_analyze(sub_s, o2, "--registry", reg, "--run-label", "m2")
+    r2 = open(os.path.join(o2, "report.md"), encoding="utf-8").read()
+    check("C06 second run on same slice: genome table shown", "| novel |" in r2 and "Compared with: m1" in r2)
+    o3 = os.path.join(tmp, "c06c")
+    p3 = subprocess.run([sys.executable, ANALYZE, s50, g50, "--input", i50, "--outdir", o3, "--skip-response-quality",
+                         "--registry", reg, "--run-label", "m3"], capture_output=True, text=True, timeout=300)
+    r3 = open(os.path.join(o3, "report.md"), encoding="utf-8").read()
+    aj3 = json.load(open(os.path.join(o3, "analysis.json"), encoding="utf-8"))
+    check("C06 different gold file: runs skipped with a warning",
+          "different gold file" in r3 and "WARNING" in p3.stderr and set(aj3["genome"]["skipped_other_slice"]) == {"m1", "m2"})
+    check("C06 different gold file: nothing compared", aj3["genome"]["compared_with"] == [])
+
+    # C07: every taxonomy row in the report has a description
+    tax_rows = [l for l in report.split("## Error Taxonomy")[1].split("##")[0].splitlines()
+                if l.startswith("| ") and not l.startswith("| taxonomy")]
+    check("C07 every taxonomy row has a description", tax_rows and all(l.rstrip().rstrip("|").split("|")[-1].strip()
+                                                                         for l in tax_rows), tax_rows[:3])
+
+    # C09: response groups never get their own defining condition as a regime
+    check("C09 no circular reply_/lang_drift regime on response groups",
+          all(not any(r["condition"].startswith(("reply_", "lang_drift")) for r in c["regime"])
+              for c in aj["clusters"] + aj_p["clusters"] if c["taxonomy"].startswith("response.")))
+
+    # C08: --mistakes-only help text matches behaviour
+    hp = subprocess.run([sys.executable, ANALYZE, "--help"], capture_output=True, text=True).stdout
+    check("C08 --mistakes-only help says the report still covers all samples", "still cover all samples" in " ".join(hp.split()))
 
     print()
     failed = [nm for nm, ok in results if not ok]
