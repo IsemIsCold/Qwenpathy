@@ -1,7 +1,7 @@
 # Tasks
 
 Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own rows, and edit them in your PR.
-**Last full update: Oct 5 (evening).** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
+**Last full update: Oct 5 (evening); T1 done Oct 6.** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
 
 ## Where we are (Oct 5)
 
@@ -9,6 +9,7 @@ Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own ro
 - **Prompt phase is finished.** 16 experiments (EXP-005 to EXP-016): no prompt beats V0 on emotion beyond noise, but **V1.8** wins clearly on profile, confirmed on an untouched val slice (n50b). V1.8 is frozen and is now `participant/run_inference.py` on `main` (V0 = commit `e5209d2`).
 - **Next phase: V2 = fine-tuning** (QLoRA on Qwen3-8B). Emotion (25 pts) can only improve through training now.
 - **Submission #2 waits for the first training results.** Rule: a fine-tuned model is submitted only if it beats V1.8 on **both** n50 and n50b. Fallback: if nothing beats V1.8 by **Oct 16**, submit V1.8.
+- **Oct 6: T1 done** — SFT data verified (`check_sft.py` PASS). Training uses `cutoff_len 6144`. Note for eval: val gold `val_conv_000331` contains leaked `<think>` reasoning (not in n50/n50b).
 - Remember: the **last** successful submission counts. Never submit something worse after something better.
 
 ### Baseline to beat (V1.8 = V1.7 prompt, HF API, greedy)
@@ -51,13 +52,13 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 
 | # | Task | Owner | Depends on | Due | Status |
 |---|---|---|---|---|---|
-| T1 | **Rebuild SFT data with the frozen prompt.** `build_sft.py` must `import` SYSTEM_PROMPT + the history formatter from `participant/run_inference.py` (= V1.8 since Oct 5; no copy-paste), set `memory_refs: []` in every target, keep the field order the parser expects, and exclude all val conversations. Output: LLaMA-Factory sharegpt + `dataset_info.json`, template `qwen3_nothink`. Report: #examples, token-length stats (p50/p95/max), how many are truncated. | Ismail M. (review: Ismail F.) | — | Oct 6 | todo |
+| T1 | **Rebuild SFT data with the frozen prompt.** `train/build_sft.py` imports SYSTEM_PROMPT + `conversation_text()` from `participant/run_inference.py` (V1.8), `memory_refs: []`, prompt field order, val excluded; skips 7 gold replies with leaked `<think>` reasoning. `train/check_sft.py` = sign-off (val leakage, targets, prompt identity, exact token lengths, pilot subset). **Result (Oct 6, PASS):** 17,745 train + 905 dev (5% of train conversations); 660 histories truncated (`--max-user-tokens 3500`); total tokens p50 1,110 / p95 3,597 / max 5,009; train sum 25.2M; pilot = `migu_pilot2k` (2,000, seed 42). Output: `data/sft/` sharegpt + `dataset_info.json`. | Ismail M. (review: Ismail F.) | — | Oct 6 | done |
 | T2 | **Migu training setup** (无卡开机, no GPU): new conda env `train_env` with LLaMA-Factory + bitsandbytes; reuse the Qwen3-8B weights already on the instance; copy SFT data + val n50/n50b. Check pip/ModelScope access works from the instance. Save it as a private image (`npu-ic-train`). | Ismail M. (+ Ismail F. for Migu access) | — | Oct 6 | todo |
 | T3 | **vLLM eval harness on Migu:** one script that serves a model (base or merged) with vLLM in `conda_env` and runs `participant/run_inference.py` (V1.8) on n50 and n50b, then `eval.py` + `analyze.py`. Same config as the submission (non-thinking, greedy). Basically `start.sh` + eval, so it also proves the submission path. | Ismail F. | T2 | Oct 7 | todo |
 | T4 | **V1.8 baseline on vLLM** (base Qwen3-8B, no training) on n50 + n50b with T3. These numbers replace the API numbers as the bar to beat. | Ismail F. | T3 | Oct 7 | todo |
-| T5 | **Pilot QLoRA:** 2,000 training examples × 1 epoch on Migu (≈40–60 min on one 4090, or ~half with both GPUs via DDP; ~1 card-hour either way). LoRA r=16, α=32, lr 1e-4, cutoff 4096, loss on the assistant turn only. | Ismail M. | T1, T2 | Oct 7 | todo |
+| T5 | **Pilot QLoRA:** 2,000 training examples × 1 epoch on Migu (≈40–60 min on one 4090, or ~half with both GPUs via DDP; ~1 card-hour either way). LoRA r=16, α=32, lr 1e-4, **`cutoff_len: 6144`** (4096 would cut 310 examples, sometimes inside the target JSON), template **`qwen3_nothink`**, dataset **`migu_pilot2k`**, loss on the assistant turn only. Record tokens/s: it turns T1's 25.2M training tokens into the real T7 estimate. | Ismail M. | T1, T2 | Oct 7 | todo |
 | T6 | **Pilot gate** (run T3 on the pilot adapter, merged): 100% parseable JSON · no emotion collapse (no label > 60% of predictions) · emotion accuracy clearly above T4 on n50 **and** n50b · reply length near gold (median ≈ 100 chars). Fail → fix data/config before any full run. | Ismail F. + Yahya | T4, T5 | Oct 8 | todo |
-| T7 | **Full QLoRA run:** full train set × 1 epoch on Migu, both GPUs (DDP): ≈1.5–2.5 h wall, ≈5–6 card-hours; exact estimate from T1's token count and the pilot's speed, written in LOG.md first. Save checkpoints every ~25%. | Ismail M. | T6 pass | Oct 9 | todo |
+| T7 | **Full QLoRA run:** full train set × 1 epoch on Migu, both GPUs (DDP): ≈1.5–2.5 h wall, ≈5–6 card-hours; exact estimate from T1's token count (25.2M) and the pilot's speed; `cutoff_len: 6144`, written in LOG.md first. Save checkpoints every ~25%. | Ismail M. | T6 pass | Oct 9 | todo |
 | T8 | **Merge** the LoRA into FP16 safetensors (no peft at inference), load it in vLLM on Migu, run T3. Pick the best checkpoint on n50 + n50b. | Ismail M. + Ismail F. | T7 | Oct 10 | todo |
 | T9 | **Submission check** of the merged model: copy weights into `participant/model` in `conda_env`, run `start.sh` end to end, measure latency (mean of first 100), save the submission image. Budget ≈ 0.5 card-hours. | Ismail F. | T8 | Oct 11 | todo |
 | T10 | **Submission #2** = fine-tuned model, only if it beats V1.8 on n50 and n50b (T4 numbers). | Ismail F. | T9 | Oct 11 | todo |

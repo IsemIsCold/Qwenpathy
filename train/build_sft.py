@@ -51,10 +51,12 @@ import importlib.util
 import json
 import math
 import random
+import re
 import sys
 from pathlib import Path
 
 FIELDS = ("response_text", "emotion_label", "user_profile", "memory_refs")
+THINK_RE = re.compile(r"</?think>")  # leaked reasoning in a gold reply
 CHARS_PER_TOKEN = 1.4  # Chinese text with the Qwen tokenizer, used only without --tokenizer
 
 
@@ -190,6 +192,10 @@ def build_examples(conversations, ri, counter, args, field_order):
             if not sample["history"] or sample["history"][-1]["role"] != "user":
                 stats["skipped_bad_history"] += 1
                 continue
+            if THINK_RE.search(point["target"]["response_text"]):
+                # 7 train golds contain the generator's <think> reasoning before the reply
+                stats["skipped_think_leak"] += 1
+                continue
             target = build_target(point["target"], ri, field_order)
             if target is None:
                 stats["skipped_invalid_gold"] += 1
@@ -218,6 +224,7 @@ def build_examples(conversations, ri, counter, args, field_order):
         "dropped_turns": stats["dropped_turns"],
         "skipped_invalid_gold": stats["skipped_invalid_gold"],
         "skipped_bad_history": stats["skipped_bad_history"],
+        "skipped_think_leak": stats["skipped_think_leak"],
         "max_user_tokens": args.max_user_tokens,
         "system_prompt_tokens": counter.count(system_prompt),
         "token_counting": "tokenizer" if counter.exact else f"estimate {CHARS_PER_TOKEN} chars/token",
