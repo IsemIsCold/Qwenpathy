@@ -196,6 +196,10 @@ def build_examples(conversations, ri, counter, args, field_order):
                 # 7 train golds contain the generator's <think> reasoning before the reply
                 stats["skipped_think_leak"] += 1
                 continue
+            if args.max_reply_chars and len(point["target"]["response_text"]) > args.max_reply_chars:
+                # long gold replies: val median is ~100 chars, train has a long tail (EXP-017 notes)
+                stats["skipped_long_reply"] += 1
+                continue
             target = build_target(point["target"], ri, field_order)
             if target is None:
                 stats["skipped_invalid_gold"] += 1
@@ -225,6 +229,8 @@ def build_examples(conversations, ri, counter, args, field_order):
         "skipped_invalid_gold": stats["skipped_invalid_gold"],
         "skipped_bad_history": stats["skipped_bad_history"],
         "skipped_think_leak": stats["skipped_think_leak"],
+        "skipped_long_reply": stats["skipped_long_reply"],
+        "max_reply_chars": args.max_reply_chars,
         "max_user_tokens": args.max_user_tokens,
         "system_prompt_tokens": counter.count(system_prompt),
         "token_counting": "tokenizer" if counter.exact else f"estimate {CHARS_PER_TOKEN} chars/token",
@@ -293,6 +299,9 @@ def parse_args():
     ap.add_argument("--tokenizer", help="local Qwen3-14B folder (tokenizer files are enough)")
     ap.add_argument("--max-user-tokens", type=int, default=3500,
                     help="budget for the rendered user message; the system prompt (~500-700 tokens) comes on top")
+    ap.add_argument("--max-reply-chars", type=int, default=350,
+                    help="skip examples whose gold reply is longer than this (0 = keep all). 350 brings the "
+                         "train reply median (~106) and emotion mix close to val; see LOG.md Oct 7")
     ap.add_argument("--dev-ratio", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--field-order", default=",".join(FIELDS),
