@@ -1,15 +1,18 @@
 # Tasks
 
 Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own rows, and edit them in your PR.
-**Last full update: Oct 5 (evening); T1 done Oct 6.** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
+**Last full update: Oct 7 (night).** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
 
-## Where we are (Oct 5)
+## Where we are (Oct 7)
 
 - **Submission #1 (V0) is in** (Oct 4). Official score pending.
 - **Prompt phase is finished.** 16 experiments (EXP-005 to EXP-016): no prompt beats V0 on emotion beyond noise, but **V1.8** wins clearly on profile, confirmed on an untouched val slice (n50b). V1.8 is frozen and is now `participant/run_inference.py` on `main` (V0 = commit `e5209d2`).
 - **Next phase: V2 = fine-tuning** (QLoRA on Qwen3-8B). Emotion (25 pts) can only improve through training now.
 - **Submission #2 waits for the first training results.** Rule: a fine-tuned model is submitted only if it beats V1.8 on **both** n50 and n50b. Fallback: if nothing beats V1.8 by **Oct 16**, submit V1.8.
 - **Oct 6: T1 done** — SFT data verified (`check_sft.py` PASS). Training uses `cutoff_len 6144`. Note for eval: val gold `val_conv_000331` contains leaked `<think>` reasoning (not in n50/n50b).
+- **Oct 7: EXP-017 PASS** — DeepSeek V4.1-Flash (HF router `:novita`, thinking off) beats V1.8 on n50 and n50b (+~0.05 ROUGE-L, +10–16 acc). Not submittable (offline); it becomes the P2 data tool (rewrite long replies, rare-emotion augmentation).
+- **Oct 7: training data filtered** to gold replies ≤ 350 chars (`build_sft.py --max-reply-chars 350`, now default): 14,942 train / 768 dev, 18.7M train tokens.
+- **Oct 7: T2, T3, T4 done; T5 pilot running.** Training env = venv `/opt/train_venv` on top of `conda_env` (conda_env untouched). Template = `qwen3` + `enable_thinking: false` (matches vLLM exactly; `qwen3_nothink` did NOT add the empty think block). **New bar to beat = T4 (V1.8 on Migu vLLM): n50 acc 0.54 / ROUGE-L 0.174, n50b acc 0.62 / ROUGE-L 0.197.**
 - Remember: the **last** successful submission counts. Never submit something worse after something better.
 
 ### Baseline to beat (V1.8 = V1.7 prompt, HF API, greedy)
@@ -39,26 +42,26 @@ These are API numbers. The fine-tuned model runs on vLLM, so **T4 below re-measu
 | Job | Card-hours (est.) |
 |---|---|
 | T4 V1.8 baseline on vLLM (n50 + n50b) | ~0.3 |
-| T5 pilot QLoRA (2k × 1 epoch) | ~1 |
+| T5 pilot QLoRA (2k × 1 epoch) | ~1 (actual ≈0.8: ran on 1 GPU while 2 were booked) |
 | T6 pilot eval | ~0.3 |
-| T7 full QLoRA (18.6k × 1 epoch) | ~5–6 |
+| T7 full QLoRA (14.9k × 1 epoch, 18.7M tokens) | **~3–3.5** (pilot speed ≈3.1 s/step at 4 samples/step on 1 GPU; use both GPUs) |
 | T8 checkpoint evals | ~0.6 |
 | T9 + submissions | ~1.5 |
 | P3 AWQ test | ~1 |
 | **Planned total** | **~10–11** (P2 second run: +~6 if needed) |
 | **Reserve, never touch** | **≥ 5** |
 
-Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú kǎ kāijī*, no GPU). Turn the GPU instance off the moment a job ends. Train in a **separate conda env** (`train_env`) so the submission env (`conda_env`) and the saved submission image stay untouched; clone the instance or save a separate private image for training.
+Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú kǎ kāijī*, no GPU). Turn the GPU instance off the moment a job ends. Train in the **separate venv `/opt/train_venv`** (built on top of `conda_env` with `--system-site-packages`; launch with `/opt/train_venv/bin/llamafactory-cli`) so the submission env (`conda_env`) and the saved submission image stay untouched; clone the instance or save a separate private image for training.
 
 | # | Task | Owner | Depends on | Due | Status |
 |---|---|---|---|---|---|
 | T1 | **Rebuild SFT data with the frozen prompt.** `train/build_sft.py` imports SYSTEM_PROMPT + `conversation_text()` from `participant/run_inference.py` (V1.8), `memory_refs: []`, prompt field order, val excluded; skips 7 gold replies with leaked `<think>` reasoning. `train/check_sft.py` = sign-off (val leakage, targets, prompt identity, exact token lengths, pilot subset). **Result (Oct 6, PASS):** 17,745 train + 905 dev (5% of train conversations); 660 histories truncated (`--max-user-tokens 3500`); total tokens p50 1,110 / p95 3,597 / max 5,009; train sum 25.2M; pilot = `migu_pilot2k` (2,000, seed 42). Output: `data/sft/` sharegpt + `dataset_info.json`. | Ismail M. (review: Ismail F.) | — | Oct 6 | done |
-| T2 | **Migu training setup** (无卡开机, no GPU): new conda env `train_env` with LLaMA-Factory + bitsandbytes; reuse the Qwen3-8B weights already on the instance; copy SFT data + val n50/n50b. Check pip/ModelScope access works from the instance. Save it as a private image (`npu-ic-train`). | Ismail M. (+ Ismail F. for Migu access) | — | Oct 6 | todo |
-| T3 | **vLLM eval harness on Migu:** one script that serves a model (base or merged) with vLLM in `conda_env` and runs `participant/run_inference.py` (V1.8) on n50 and n50b, then `eval.py` + `analyze.py`. Same config as the submission (non-thinking, greedy). Basically `start.sh` + eval, so it also proves the submission path. | Ismail F. | T2 | Oct 7 | todo |
-| T4 | **V1.8 baseline on vLLM** (base Qwen3-8B, no training) on n50 + n50b with T3. These numbers replace the API numbers as the bar to beat. | Ismail F. | T3 | Oct 7 | todo |
-| T5 | **Pilot QLoRA:** 2,000 training examples × 1 epoch on Migu (≈40–60 min on one 4090, or ~half with both GPUs via DDP; ~1 card-hour either way). LoRA r=16, α=32, lr 1e-4, **`cutoff_len: 6144`** (4096 would cut 310 examples, sometimes inside the target JSON), template **`qwen3_nothink`**, dataset **`migu_pilot2k`**, loss on the assistant turn only. Record tokens/s: it turns T1's 25.2M training tokens into the real T7 estimate. | Ismail M. | T1, T2 | Oct 7 | todo |
-| T6 | **Pilot gate** (run T3 on the pilot adapter, merged): 100% parseable JSON · no emotion collapse (no label > 60% of predictions) · emotion accuracy clearly above T4 on n50 **and** n50b · reply length near gold (median ≈ 100 chars). Fail → fix data/config before any full run. | Ismail F. + Yahya | T4, T5 | Oct 8 | todo |
-| T7 | **Full QLoRA run:** full train set × 1 epoch on Migu, both GPUs (DDP): ≈1.5–2.5 h wall, ≈5–6 card-hours; exact estimate from T1's token count (25.2M) and the pilot's speed; `cutoff_len: 6144`, written in LOG.md first. Save checkpoints every ~25%. | Ismail M. | T6 pass | Oct 9 | todo |
+| T2 | **Migu training setup** — venv `/opt/train_venv` on `conda_env` (torch 2.10.0+cu128 kept via constraint; LLaMA-Factory 0.9.5, bitsandbytes 0.50.2); model at `/root/participant/model`; data in `/mnt/storage/sft` + `/mnt/storage/val`; configs in `/mnt/storage/configs`. Smoke test (10 steps, 1 GPU) PASS: 4-bit load, loss 2.04→1.30, 1.36 samples/s. Template fixed to `qwen3` + `enable_thinking: false` (empty think block in prompt, masked). `torchrun` shim added to the venv for 2-GPU DDP. Lessons: conda clone broke torch (pip pulled cu130) → venv instead; `FORCE_TORCHRUN` used conda_env's torchrun → shim. | Ismail F. (+ Ismail M.) | — | Oct 7 | done |
+| T3 | **vLLM eval harness on Migu** = `bash /root/participant/start.sh <input> <outdir>` (V1.8 `run_inference.py` installed, V0 kept as `run_inference_v0.py`) + `scripts/validate.py` + `scripts/eval.py` in `/mnt/storage/scripts` (run with `/opt/train_venv/bin/python`). BERTScore skipped (no `bert-base-chinese` on the instance yet). | Ismail F. | T2 | Oct 7 | done |
+| T4 | **V1.8 baseline on vLLM** (base Qwen3-8B, no training). n50: acc **0.54**, macro-F1 0.238, profile micro-F1 0.352, exact 0.287, ROUGE-L **0.174**, BLEU-4 0.021, latency mean 1.32 s. n50b: acc **0.62**, macro-F1 0.336, profile 0.323, exact 0.287, ROUGE-L **0.197**, BLEU-4 0.068, latency 1.52 s. 0 format errors. **This is the bar for T6/T10.** | Ismail F. | T3 | Oct 7 | done |
+| T5 | **Pilot QLoRA:** `configs/pilot.yaml` = 2,000 ex (`migu_pilot2k`) × 1 epoch, LoRA r=16 α=32 all-linear, lr 1e-4 cosine, batch 1 × accum 4, `cutoff_len 6144`, template `qwen3` + `enable_thinking: false`, output `/mnt/storage/runs/pilot`. Running on 1 GPU (500 steps, ~3.1 s/step, ~26 min); loss 2.54 → ~1.25 by step 100. Next: read `train_runtime` and loss curve. | Ismail F. | T1, T2 | Oct 7 | doing |
+| T6 | **Pilot gate:** merge on CPU (无卡开机) with `llamafactory-cli export configs/merge_pilot.yaml` → `/mnt/storage/merged/pilot`, copy the base model's tokenizer files over it (same chat template as V1.8), run T3 on n50 + n50b. Pass: 100% parseable JSON · no label > 60% of predictions · emotion acc clearly above T4 (0.54 / 0.62) on **both** slices · reply median ≈ 100 chars · latency not worse than ~1.5 s. Fail → fix data/config before any full run. | Ismail F. + Yahya | T4, T5 | Oct 8 | todo |
+| T7 | **Full QLoRA run:** 14,942 ex × 1 epoch (`migu_train`), **both GPUs**: `export PATH=/opt/train_venv/bin:$PATH; FORCE_TORCHRUN=1 nohup llamafactory-cli train configs/full.yaml &`. Estimate ≈1.6 h wall, **≈3–3.5 card-hours** (log before starting). Save checkpoints every ~25%. Never leave the instance on after the run. | Ismail F. (+ Ismail M.) | T6 pass | Oct 9 | todo |
 | T8 | **Merge** the LoRA into FP16 safetensors (no peft at inference), load it in vLLM on Migu, run T3. Pick the best checkpoint on n50 + n50b. | Ismail M. + Ismail F. | T7 | Oct 10 | todo |
 | T9 | **Submission check** of the merged model: copy weights into `participant/model` in `conda_env`, run `start.sh` end to end, measure latency (mean of first 100), save the submission image. Budget ≈ 0.5 card-hours. | Ismail F. | T8 | Oct 11 | todo |
 | T10 | **Submission #2** = fine-tuned model, only if it beats V1.8 on n50 and n50b (T4 numbers). | Ismail F. | T9 | Oct 11 | todo |

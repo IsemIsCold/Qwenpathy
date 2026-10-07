@@ -22,6 +22,8 @@
 | Date | Who | Job | Estimated | Actual | Remaining |
 |---|---|---|---|---|---|
 | 2026-10-04 | Ismail F. | B7: create instance, no-GPU setup + model download, GPU smoke (9) + val50 run, save image, upload | ~0.6 | 1.33 (29.99 → 28.67; the voucher was 30, not 20) | 28.67 |
+| 2026-10-07 | Ismail F. | T2 GPU smoke test (10 steps, 1 GPU) | ~0.2 | fill in from Migu page | |
+| 2026-10-07 | Ismail F. | T4 V1.8 baseline (start.sh n50 + n50b) + T5 pilot (1 GPU, 500 steps) on a 2-GPU boot; ~10 min lost to two failed 2-GPU launches | ~1.1 | fill in from Migu page | |
 
 **AutoDL:** not used (decision Oct 5): all training and evals run on Migu.
 
@@ -34,6 +36,7 @@
 | 2026-10-04 | Ismail F. | Hugging Face router (Nscale) | Qwen3-14B non-thinking + thinking | EXP-003, 50 val points per mode | from the $5 credit added Oct 4 |
 | 2026-10-04 | Ismail F. | Hugging Face router (Nscale) | Qwen3-8B non-thinking | EXP-004, 50 val points | from the $5 credit |
 | 2026-10-05 | Ismail F. + Ismail M. | Hugging Face router (Nscale) | Qwen3-8B (non-thinking; one thinking run) | EXP-005 to EXP-016, ~16 runs × 50 points | from the $5 credit (cents per run) |
+| 2026-10-07 | Ismail F. | Hugging Face router (novita, deepinfra, baseten, together) | DeepSeek-V4-Pro-0813, DeepSeek-V4.1-Flash | EXP-017 switch sweep (n9) + Flash on n50 + n50b | from the $5 credit (cents) |
 
 ## Experiments
 
@@ -56,3 +59,8 @@
 | EXP-015 | 2026-10-05 | V1.7 = V0 + V1.6 profile rules + tag filter | acc 0.46, macro-F1 0.204, profile micro-F1 0.373, exact 0.320, ROUGE-L 0.178. Candidate; re-tested on n50b. | [README](experiments/exp015-v1-7-combined/README.md) |
 | EXP-016 | 2026-10-05 | V0 vs V1.7 on n50b (independent random slice) | acc 0.60 vs 0.62, profile micro-F1 0.175 vs 0.300, exact 0.107 vs 0.247, ROUGE-L 0.205 vs 0.200. **V1.7 confirmed.** Submission #2 = **V1.8** = V1.7 + emotion alias map (parser only). | [README](experiments/exp016-n50b-confirmation/README.md) |
 | T1 | 2026-10-06 | SFT data rebuild + sign-off (`build_sft.py` with the Qwen3-8B tokenizer, new `check_sft.py`) | **PASS**: 17,745 train + 905 dev, 0 val leakage, 0 bad targets, 0 prompt mismatches vs run_inference.py. 7 train golds (+1 val: val_conv_000331) contain leaked `<think>` reasoning → skipped. System prompt 355 tokens; total p50 1,110 / p95 3,597 / max 5,009; target p50 130 / p95 579 / max 1,178; train sum 25.2M tokens. 310 train examples > 4096 → **cutoff_len 6144**. Pilot `migu_pilot2k` (2,000, seed 42). | `data/sft/build_report.json`, `data/sft/check_report.json` (gitignored) |
+| T1b | 2026-10-07 | `build_sft.py --max-reply-chars 350` (new default): skip gold replies > 350 chars | 14,942 train + 768 dev; 2,940 skipped (long), 7 (think leak); train reply median ~106 (val 98), anxiety 32% (val 31.9%); total tokens p50 1,024 / p95 2,834 / max 4,144; train sum 18.7M (was 25.2M). check_sft PASS at cutoff 6144. | `data/sft/build_report.json` |
+| EXP-017 | 2026-10-07 | Teacher test: DeepSeek V4 via HF router, thinking off, V1.8 prompt, greedy | **V4-Pro-0813 unusable on HF** (output starts `_text:`, not JSON, on every provider; together errors; novita ignores the switch). **V4.1-Flash:novita works** with `{"thinking": {"type": "disabled"}}`. Flash vs V1.8 (API) — n50: acc 0.62 vs 0.46, ROUGE-L 0.231 vs 0.178, BLEU-4 0.077 vs 0.025, profile micro-F1 0.449 vs 0.373; n50b: acc 0.72 vs 0.62, ROUGE-L 0.249 vs 0.200, BLEU-4 0.119 vs 0.068. **PASS** → Flash = P2 data tool (~$1–2). | `experiments/exp017-teacher/` |
+| T2 | 2026-10-07 | Migu training env + GPU smoke test | venv `/opt/train_venv` (torch 2.10.0+cu128, LLaMA-Factory 0.9.5, bnb 0.50.2); 10 steps on 1 GPU: loss 2.04 → 1.30, 1.36 samples/s, 16.5 GB VRAM at cutoff 6144. Template `qwen3` + `enable_thinking: false` verified: trained part starts with `{"response_text"`, empty think block masked in the prompt. | `/mnt/storage/runs/smoke*.log` |
+| T4 | 2026-10-07 | V1.8 baseline on Migu vLLM via `start.sh` (TP2, greedy) | n50: acc 0.54, macro-F1 0.238, profile micro-F1 0.352, exact 0.287, ROUGE-L 0.174, BLEU-4 0.021, reply median 85 (gold 146), latency mean 1.32 s. n50b: acc 0.62, macro-F1 0.336, profile 0.323, exact 0.287, ROUGE-L 0.197, BLEU-4 0.068, median 96 (gold 100), latency 1.52 s. 0 format errors. = bar for T6. | `/mnt/storage/out/v18_n50*` |
+| T5 | 2026-10-07 | Pilot QLoRA, 2k × 1 epoch, 1 GPU (running) | 500 steps at ~3.1 s/step (~26 min); loss 2.54 (step 1) → 1.2–1.3 (steps 17–100). Final runtime/loss: pending. | `/mnt/storage/runs/pilot` |
