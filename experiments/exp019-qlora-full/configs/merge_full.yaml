@@ -1,0 +1,9 @@
+model_name_or_path: /root/participant/model
+adapter_name_or_path: /mnt/storage/runs/full
+template: qwen3
+finetuning_type: lora
+trust_remote_code: true
+export_dir: /root/merged/full
+export_size: 5
+export_device: cpu
+export_legacy_format: false
