@@ -1,13 +1,13 @@
 # Tasks
 
 Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own rows, and edit them in your PR.
-**Last full update: Oct 8 (morning).** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
+**Last full update: Oct 8 (afternoon).** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
 
 ## Where we are (Oct 8)
 
 - **Oct 8: Elly is back** and takes back infrastructure (from Ismail F.) and latency (from Yahya). His tasks: see **Infrastructure (Elly)** below. T2/T3/T4 were finished while he was out; details in the T rows and LOG.md.
-- **Oct 8: T5 pilot done on 2 GPUs (DDP works), T6 gate passed, T7 full run in progress.** Merge goes right behind training (GPUs detach after ~30 min idle).
-- **Oct 8: T7 done — full model is the new best.** vs pilot / V1.8 (T4): n50 acc **0.80** (0.68 / 0.54), macro-F1 0.510, profile micro-F1 0.489 / exact 0.453, ROUGE-L **0.269** (0.237 / 0.174), BLEU-4 0.130; n50b acc **0.86** (0.78 / 0.62), macro-F1 0.597, profile 0.477 / 0.500, ROUGE-L **0.293** (0.259 / 0.197), BLEU-4 0.151. Reply median 150 / 106 (gold 146 / 100.5). Train 1 h 48 min, 2.31 samples/s. Merged: `/root/merged/full`. **GPUs break after a training process exits** (`Failed to initialize NVML: Unknown Error`, twice) → eval in a fresh boot. Latency pending (performance_report.json).
+- **Oct 8: the whole fine-tuning chain is done (T5 pilot on 2 GPUs, T6 gate PASS, T7 full run), all run by Ismail F.** Rule learned: **train in one boot, eval in a fresh boot** (GPUs break when a training process exits).
+- **Oct 8: T7 done — full model is the new best.** vs pilot / V1.8 (T4): n50 acc **0.80** (0.68 / 0.54), macro-F1 0.510, profile micro-F1 0.489 / exact 0.453, ROUGE-L **0.269** (0.237 / 0.174), BLEU-4 0.130; n50b acc **0.86** (0.78 / 0.62), macro-F1 0.597, profile 0.477 / 0.500, ROUGE-L **0.293** (0.259 / 0.197), BLEU-4 0.151. Reply median 150 / 106 (gold 146 / 100.5). Train 1 h 48 min, 2.31 samples/s. Merged: `/root/merged/full`. **GPUs break after a training process exits** (`Failed to initialize NVML: Unknown Error`, twice) → eval in a fresh boot. Latency mean 1.66 / 1.50 s (median 1.47 / 1.30; T4 1.32 / 1.52), 0 parse failures. **→ Submission #2 candidate.**
 - **Oct 8: Zakaria's B2/B6 reviewed.** Data is correct (val numbers match an independent recount), but the stats doc is hand-edited, real token counts are never printed, and one chart is blank. Real Qwen3 ratio on val ≈ **1.6 chars/token** (not 1.4, not 2+). His tasks are now spelled out step by step in **Dataset (Zakaria)** below + [docs/briefs/zakaria.md](docs/briefs/zakaria.md). **P4 is moved up to Oct 10 (= Z1)** so truncation is in before T9/submission #2. New research task **Z4** (due Oct 12) picks the long-reply filter + augmentation recipe for P2.
 
 - **Submission #1 (V0) is in** (Oct 4). Official score pending.
@@ -34,8 +34,8 @@ These are API numbers. The fine-tuned model runs on vLLM, so **T4 below re-measu
 
 | Area | Owner | Owns |
 |---|---|---|
-| Captain, prompt, Migu, submissions | **Ismail F.** | `participant/`, all submissions, merging PRs |
-| Training | **Ismail M.** (lead) | SFT data build, LLaMA-Factory configs, training runs on Migu, merged weights |
+| Captain, prompt, Migu, submissions | **Ismail F.** | `participant/`, all submissions, merging PRs. **Built and ran the whole fine-tuning chain on Migu (T1–T7, E1): SFT data rebuild + sign-off, training env, eval harness, V1.8 baseline, pilot, 2-GPU DDP, full run, merges.** |
+| Training | **Ismail F.** (T1–T7) · Ismail M. (P2) | Ismail F.: SFT data rebuild + `check_sft.py` (T1), LLaMA-Factory configs, training runs on Migu, merged weights (T2–T7). Ismail M.: P2 second run, P3 with Elly. |
 | Dataset | **Zakaria** | val/train splits, data stats, truncation of long conversations |
 | Evaluation | **Yahya** | `validate.py`, `eval.py`, `analyze.py` |
 | Infrastructure + latency | **Elly** (back Oct 8) | Migu instances + private images, 2-GPU launch, card-hour ledger, submission check (T9), latency measurement + P3 |
@@ -47,10 +47,10 @@ These are API numbers. The fine-tuned model runs on vLLM, so **T4 below re-measu
 | Job | Card-hours (est.) |
 |---|---|
 | T4 V1.8 baseline on vLLM (n50 + n50b) | ~0.3 |
-| T5 pilot QLoRA (2k × 1 epoch) | ~1 (actual ≈0.8: ran on 1 GPU while 2 were booked) |
-| T6 pilot eval | ~0.3 |
+| T5 pilot QLoRA (2k × 1 epoch) | ~1 (actual: ≈0.8 for the stopped 1-GPU run on Oct 7 + ≈0.5 for the 2-GPU rerun on Oct 8) |
+| T6 pilot eval | ~0.3 (actual ≈0.6: ran twice after an ssh drop) |
 | T7 full QLoRA (14.9k × 1 epoch, 18.7M tokens) | ~3–3.5 (actual: 1 h 48 min on 2 GPUs ≈ 3.6, + ~0.5 h with dead GPUs before shutdown) |
-| T8 checkpoint evals | ~0.6 |
+| T8 checkpoint evals | dropped (0) |
 | T9 + submissions | ~1.5 |
 | P3 AWQ test | ~1 |
 | **Planned total** | **~10–11** (P2 second run: +~6 if needed) |
@@ -60,22 +60,22 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 
 | # | Task | Owner | Depends on | Due | Status |
 |---|---|---|---|---|---|
-| T1 | **Rebuild SFT data with the frozen prompt.** `train/build_sft.py` imports SYSTEM_PROMPT + `conversation_text()` from `participant/run_inference.py` (V1.8), `memory_refs: []`, prompt field order, val excluded; skips 7 gold replies with leaked `<think>` reasoning. `train/check_sft.py` = sign-off (val leakage, targets, prompt identity, exact token lengths, pilot subset). **Result (Oct 6, PASS):** 17,745 train + 905 dev (5% of train conversations); 660 histories truncated (`--max-user-tokens 3500`); total tokens p50 1,110 / p95 3,597 / max 5,009; train sum 25.2M; pilot = `migu_pilot2k` (2,000, seed 42). Output: `data/sft/` sharegpt + `dataset_info.json`. | Ismail M. (review: Ismail F.) | — | Oct 6 | done |
-| T2 | **Migu training setup** — venv `/opt/train_venv` on `conda_env` (torch 2.10.0+cu128 kept via constraint; LLaMA-Factory 0.9.5, bitsandbytes 0.50.2); model at `/root/participant/model`; data in `/mnt/storage/sft` + `/mnt/storage/val`; configs in `/mnt/storage/configs`. Smoke test (10 steps, 1 GPU) PASS: 4-bit load, loss 2.04→1.30, 1.36 samples/s. Template fixed to `qwen3` + `enable_thinking: false` (empty think block in prompt, masked). `torchrun` shim added to the venv for 2-GPU DDP. Lessons: conda clone broke torch (pip pulled cu130) → venv instead; `FORCE_TORCHRUN` used conda_env's torchrun → shim. | Ismail F. (+ Ismail M.) | — | Oct 7 | done |
+| T1 | **Rebuild SFT data with the frozen prompt.** `train/build_sft.py` imports SYSTEM_PROMPT + `conversation_text()` from `participant/run_inference.py` (V1.8), `memory_refs: []`, prompt field order, val excluded; skips 7 gold replies with leaked `<think>` reasoning. `train/check_sft.py` = sign-off (val leakage, targets, prompt identity, exact token lengths, pilot subset). **Result (Oct 6, PASS):** 17,745 train + 905 dev (5% of train conversations); 660 histories truncated (`--max-user-tokens 3500`); total tokens p50 1,110 / p95 3,597 / max 5,009; train sum 25.2M; pilot = `migu_pilot2k` (2,000, seed 42). Output: `data/sft/` sharegpt + `dataset_info.json`. | Ismail F. | — | Oct 6 | done |
+| T2 | **Migu training setup** — venv `/opt/train_venv` on `conda_env` (torch 2.10.0+cu128 kept via constraint; LLaMA-Factory 0.9.5, bitsandbytes 0.50.2); model at `/root/participant/model`; data in `/mnt/storage/sft` + `/mnt/storage/val`; configs in `/mnt/storage/configs`. Smoke test (10 steps, 1 GPU) PASS: 4-bit load, loss 2.04→1.30, 1.36 samples/s. Template fixed to `qwen3` + `enable_thinking: false` (empty think block in prompt, masked). `torchrun` shim added to the venv for 2-GPU DDP. Lessons: conda clone broke torch (pip pulled cu130) → venv instead; `FORCE_TORCHRUN` used conda_env's torchrun → shim. | Ismail F. | — | Oct 7 | done |
 | T3 | **vLLM eval harness on Migu** = `bash /root/participant/start.sh <input> <outdir>` (V1.8 `run_inference.py` installed, V0 kept as `run_inference_v0.py`) + `scripts/validate.py` + `scripts/eval.py` in `/mnt/storage/scripts` (run with `/opt/train_venv/bin/python`). BERTScore skipped (no `bert-base-chinese` on the instance yet). | Ismail F. | T2 | Oct 7 | done |
 | T4 | **V1.8 baseline on vLLM** (base Qwen3-8B, no training). n50: acc **0.54**, macro-F1 0.238, profile micro-F1 0.352, exact 0.287, ROUGE-L **0.174**, BLEU-4 0.021, latency mean 1.32 s. n50b: acc **0.62**, macro-F1 0.336, profile 0.323, exact 0.287, ROUGE-L **0.197**, BLEU-4 0.068, latency 1.52 s. 0 format errors. **This is the bar for T6/T10.** | Ismail F. | T3 | Oct 7 | done |
 | T5 | **Pilot QLoRA:** 2,000 ex (`migu_pilot2k`) × 1 epoch, LoRA r=16 α=32 all-linear, lr 1e-4 cosine, `cutoff_len 6144`, template `qwen3` + `enable_thinking: false`. Oct 7 1-GPU run stopped by accident at step 179 (checkpoint-125 kept). **Oct 8 rerun on 2 GPUs** (`configs/pilot_ddp.yaml`, DDP, global batch 8, 250 steps): train_runtime 892 s, 2.24 samples/s, train_loss 1.315. Merged → `/root/merged/pilot_ddp`. T7 estimate ≈ 1.85 h wall ≈ 3.7 card-hours. | Ismail F. | T1, T2 | Oct 8 | done |
-| T6 | **Pilot gate:** merge on CPU (无卡开机) with `llamafactory-cli export configs/merge_pilot.yaml` → `/mnt/storage/merged/pilot`, copy the base model's tokenizer files over it (same chat template as V1.8), run T3 on n50 + n50b. Pass: 100% parseable JSON · no label > 60% of predictions · emotion acc clearly above T4 (0.54 / 0.62) on **both** slices · reply median ≈ 100 chars · latency not worse than ~1.5 s. Fail → fix data/config before any full run. **PASS (Oct 8).** Scores (n50 / n50b: acc, macro-F1, profile, ROUGE-L, reply median, latency): _fill in + LOG.md row_. | Ismail F. + Yahya | T4, T5 | Oct 8 | done |
-| T7 | **Full QLoRA run: done Oct 8** (1 h 48 min; n50 acc 0.80, n50b 0.86; merged `/root/merged/full`). Was: 14,942 ex × 1 epoch (`migu_train`), **both GPUs**: `export PATH=/opt/train_venv/bin:$PATH; FORCE_TORCHRUN=1 nohup llamafactory-cli train configs/full.yaml &`. Estimate ≈1.6 h wall, **≈3–3.5 card-hours** (log before starting). Save checkpoints every ~25%. Never leave the instance on after the run. 2-GPU launch works (E1). **Started Oct 8**: log the estimate in LOG.md, queue the merge (T8) right behind it. | Ismail F. (+ Ismail M.) | T6 pass, E1 | Oct 9 | done |
-| T8 | **Merge** the LoRA into FP16 safetensors (no peft at inference), load it in vLLM on Migu, run T3. Pick the best checkpoint on n50 + n50b. | Ismail M. + Ismail F. | T7 | Oct 10 | todo |
-| T9 | **Submission check** of the merged model: copy weights into `participant/model` in `conda_env`, run `start.sh` end to end, measure latency (mean of first 100, `performance_report.json`; compare with T4 1.32 / 1.52 s and submission #1 1.41 s), save the submission image. Budget ≈ 0.5 card-hours. | Elly (+ Ismail F.) | T8 | Oct 11 | todo |
-| T10 | **Submission #2** = fine-tuned model, only if it beats V1.8 on n50 and n50b (T4 numbers). | Ismail F. | T9 | Oct 11 | todo |
+| T6 | **Pilot gate: PASS (Oct 8).** Merged pilot (`/root/merged/pilot_ddp`) via `env VLLM_MODEL_DIR=... VLLM_SERVED_MODEL_NAME=model bash /root/participant/start.sh` + `eval.py`. n50: acc **0.68** (T4 0.54), macro-F1 0.339, profile micro-F1 0.410 / exact 0.420, ROUGE-L **0.237** (0.174), BLEU-4 0.104, reply median 128 (gold 146), latency 1.62 s. n50b: acc **0.78** (0.62), macro-F1 0.449, profile 0.340 / 0.380, ROUGE-L **0.259** (0.197), BLEU-4 0.133, median 110 (gold 100.5), latency 1.55 s. 100% valid JSON, anxiety ≈46% of predictions. | Ismail F. | T4, T5 | Oct 8 | done |
+| T7 | **Full QLoRA run: done Oct 8.** 14,942 ex × 1 epoch (`migu_train`), 2 GPUs DDP (`configs/full.yaml`, global batch 8, 1,868 steps, checkpoints every 467), 1 h 48 min, 2.31 samples/s. Merged → `/root/merged/full`. n50: acc **0.80**, macro-F1 0.510, profile 0.489 / 0.453, ROUGE-L **0.269**, BLEU-4 0.130, latency 1.66 s. n50b: acc **0.86**, macro-F1 0.597, profile 0.477 / 0.500, ROUGE-L **0.293**, BLEU-4 0.151, latency 1.50 s. The chained eval in `configs/run_t7.sh` died (GPUs lost after training) → rerun on a fresh boot. | Ismail F. | T6 pass | Oct 8 | done |
+| T8 | ~~Checkpoint sweep~~ **Dropped (Oct 8):** the final checkpoint is clearly best; differences between checkpoints on 50 samples would be noise. Merge already done in T7. | Ismail F. | T7 | — | dropped |
+| T9 | **Submission check** of the full model: no-GPU boot → `mv /root/participant/model /root/participant/model_base` and copy `/root/merged/full` to `/root/participant/model`; fresh 2-GPU boot → plain `start.sh` on Migu val50 end to end, `validate.py`, latency (first 100, `performance_report.json`; compare T7 1.66 / 1.50 s, submission #1 1.41 s); save the submission image. Budget ≈ 0.5 card-hours. | Elly (+ Ismail F.) | T7 | Oct 10 | todo |
+| T10 | **Submission #2 = T7 full model** (beats V1.8 and the pilot on both n50 and n50b). Log it in LOG.md before sending. | Ismail F. | T9 | Oct 10 | todo |
 
 ### Infrastructure (Elly)
 
 | # | Task | Depends on | Due | Status |
 |---|---|---|---|---|
-| E1 | **2-GPU DDP launch.** Test the `torchrun` shim (`/opt/train_venv/bin/torchrun` → `python -m torch.distributed.run`, then `export PATH=/opt/train_venv/bin:$PATH`; check `which torchrun`) with a short smoke run on 2 GPUs before T7. The pilot fell back to 1 GPU after two failed launches; 2 GPUs ≈ 1.6 h vs ≈ 3 h for T7. **Works: Oct 8 pilot rerun ran DDP on 2 GPUs.** | — | Oct 9 | done |
+| E1 | **2-GPU DDP launch.** Test the `torchrun` shim (`/opt/train_venv/bin/torchrun` → `python -m torch.distributed.run`, then `export PATH=/opt/train_venv/bin:$PATH`; check `which torchrun`) with a short smoke run on 2 GPUs before T7. The pilot fell back to 1 GPU after two failed launches; 2 GPUs ≈ 1.6 h vs ≈ 3 h for T7. **Done by Ismail F. on Oct 8: the pilot rerun (T5) ran DDP on 2 GPUs.** | — | Oct 9 | done |
 | E2 | **Card-hour ledger + shutdown check.** Fill in the Oct 7 actuals in LOG.md from the Migu page; confirm the GPU instance is off after every session. | — | Oct 8 | todo |
 | E3 | **Private images:** save the training image `npu-ic-train`; keep a clean submission image with `conda_env` verified (vLLM 0.19.0, transformers 4.57.6). | — | Oct 9 | todo |
 | E4 | **Latency levers** (with T9 numbers): `max_new_tokens` 1200, TP2, `max_model_len`. Then P3. | T9 | Oct 12 | todo |
@@ -101,7 +101,7 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 | P3 | **AWQ test** (only if the organisers allow quantised models): quantise the merged model (AutoAWQ / llm-compressor), compare FP16 vs AWQ on Migu: latency + accuracy on val50. Switch only if latency drops clearly and accuracy stays within ~2 points. Wait for the latency formula (O1). | Elly + Ismail M. | Oct 15 | todo |
 | P4 | Truncation at inference for very long histories (same rule as `build_sft.py`): **moved up, now Z1** (see *Dataset (Zakaria)*) | Zakaria | **Oct 10** | todo |
 | P5 | **Submission #3** with the best of P2/P3 | Ismail F. | Oct 16 | todo |
-| P6 | **Fallback:** if no fine-tuned model beats V1.8 by Oct 16, submit V1.8: `participant/` on `main` is already V1.8 (Oct 5), so rebuild the Migu image from `main` with the base Qwen3-8B weights | Ismail F. | Oct 16 | todo |
+| P6 | **Fallback:** if T7 fails T9 or scores worse officially, submit the merged pilot (`/root/merged/pilot_ddp`, also beats V1.8 on both slices). V1.8 with base weights stays the last resort. | Ismail F. | Oct 16 | todo |
 
 ## Phase 4: finalise (Oct 17–20)
 
