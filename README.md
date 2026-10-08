@@ -2,7 +2,7 @@
 
 Our entry for the **2026 动感地带AI+高校创智计划 (Dònggǎn Dìdài AI+ Gāoxiào Chuàngzhì Jìhuà)**, technical track, topic **数字人综合情感陪伴对话模型 (shùzìrén zōnghé qínggǎn péibàn duìhuà móxíng)**: a digital-human emotional-companion dialogue model.
 
-**Team:** Ismail F. (captain) · Ismail M. (training) · Zakaria (data) · Yahya (evaluation) · Elly (infrastructure)
+**Team:** **Ismail F.** (captain · training lead (QLoRA) · Migu & infrastructure · classification & prompt) · Ismail M. (training support) · Zakaria (data) · Yahya (evaluation) · Elly (infrastructure support, from Oct 8)
 **Faculty advisor:** Prof. Wang Fang
 **Deadline:** **Oct 20, 2026, 23:59 China time.** Code freeze **Oct 18**.
 
@@ -29,13 +29,24 @@ For each test sample we get a Chinese conversation that ends on a user message. 
 
 The organisers run `bash /root/participant/start.sh TEST_FILE RESULT_DIR` **offline** (no internet, no APIs) on what is probably 2× RTX 4090. We get **5 successful submissions; the last successful one counts.**
 
-## Current approach (Oct 5)
+## Current approach (Oct 8)
 
-**Qwen3-8B, non-thinking mode**, served by vLLM on 2× 4090.
+**Qwen3-8B, non-thinking mode, QLoRA fine-tuned on the full training set**, served by vLLM on 2× 4090. Built and run end to end on Migu by Ismail F. (T1–T7 in [TASKS.md](TASKS.md)).
 
-- **Prompt: V1.8, frozen** (`participant_v1_8/`): the official prompt + "leave [] if insufficient information" profile rules + a filter for over-predicted profile tags + a map for invented emotion labels. Chosen over 16 experiments and confirmed on an untouched val slice: [experiments/exp005-prompt](experiments/exp005-prompt/README.md).
-- **Next: V2 = QLoRA fine-tune** on the training set, with exactly the V1.8 prompt. See [TASKS.md](TASKS.md) Phase 3a.
-- Submissions: #1 = V0 (Oct 4). #2 = the fine-tuned model if it beats V1.8 on both val slices, otherwise V1.8 by Oct 16.
+- **Prompt: V1.8, frozen** (`participant_v1_8/`): the official prompt + "leave [] if insufficient information" profile rules + a filter for over-predicted profile tags + a map for invented emotion labels. Chosen over 16 experiments and confirmed on an untouched val slice: [experiments/exp005-prompt](experiments/exp005-prompt/README.md). Training and inference use exactly this prompt.
+- **Fine-tuning (V2):** LoRA r=16 / α=32 on all linear layers, 4-bit base (QLoRA), 14,942 training examples × 1 epoch, 2-GPU DDP, 1 h 48 min. Merged into bf16 weights for vLLM.
+
+| Val slice | Metric | V1.8 (base model) | Pilot (2k ex) | **Full QLoRA** |
+|---|---|---|---|---|
+| n50 | Emotion accuracy | 0.54 | 0.68 | **0.80** |
+| n50 | ROUGE-L / BLEU-4 | 0.174 / 0.021 | 0.237 / 0.104 | **0.269 / 0.130** |
+| n50 | Profile micro-F1 | 0.352 | 0.410 | **0.489** |
+| n50b | Emotion accuracy | 0.62 | 0.78 | **0.86** |
+| n50b | ROUGE-L / BLEU-4 | 0.197 / 0.068 | 0.259 / 0.133 | **0.293 / 0.151** |
+| n50b | Profile micro-F1 | 0.323 | 0.340 | **0.477** |
+| n50 / n50b | Latency mean | 1.32 / 1.52 s | 1.62 / 1.55 s | 1.66 / 1.50 s |
+
+- Submissions: #1 = V0 (Oct 4). **#2 = the full QLoRA model** after the T9 submission check.
 
 Why 8B, non-thinking: [exp004-model-size](experiments/exp004-model-size/README.md), [exp006-think-8b](experiments/exp006-think-8b/README.md), [docs/technical-plan.md](docs/technical-plan.md).
 
@@ -46,7 +57,7 @@ organiser data (train_public / val_public)
    │
    ├─ scripts/convert_val.py ──► data/val_input*.jsonl + data/val_gold*.jsonl     (Zakaria)
    │                                  │
-   │                     participant/run_inference.py  (official, + our prompt)    (Elly / Ismail F.)
+   │                     participant/run_inference.py  (official, + our prompt)    (Ismail F.)
    │                     or scripts/exp3_compare.py via API, for quick tests
    │                                  │
    │                                  ▼
@@ -54,7 +65,7 @@ organiser data (train_public / val_public)
    │                                  │
    │              scripts/validate.py (format gate) ─► scripts/eval.py (scores)   (Yahya)
    │
-   └─ train/build_sft.py ──► SFT data (same prompt as inference) ──► QLoRA      (Ismail M.)
+   └─ train/build_sft.py ──► SFT data (same prompt as inference) ──► QLoRA on Migu ──► merged weights   (Ismail F.)
 ```
 
 ## Repo layout
@@ -64,7 +75,7 @@ README.md               you are here
 TASKS.md                who does what, by when, status
 LOG.md                  submissions, compute spend, experiment index
 CONTRIBUTING.md         team rules: branches, PRs, submissions, compute
-participant/            the code we submit: start.sh, run_inference.py (patched), configs/   (Elly)
+participant/            the code we submit: start.sh, run_inference.py (patched), configs/   (Ismail F.)
 scripts/
   convert_val.py        val set -> test-format input + gold labels          (Zakaria)
   compute_stats.py      dataset statistics -> docs/data-stats.md            (Zakaria)
@@ -74,7 +85,8 @@ scripts/
   exp3_compare.py       runs the official prompt/parser through an API      (Ismail F.)
   setup-api-env.ps1     Windows setup for API runs (venv, key, checks)      (Ismail F.)
 train/
-  build_sft.py          train set -> SFT data that matches inference        (Zakaria / Ismail F.)
+  build_sft.py          train set -> SFT data that matches inference        (Ismail F.; spec: Zakaria)
+  check_sft.py          sign-off for the SFT data (leakage, targets, token lengths)   (Ismail F.)
 tests/
   run_tests.py          tests for validate.py + eval.py                     (Yahya)
   test_analyze.py       42 tests for analyze.py                             (Yahya)
