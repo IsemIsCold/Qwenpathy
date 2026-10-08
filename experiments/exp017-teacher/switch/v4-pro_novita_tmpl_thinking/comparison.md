@@ -1,0 +1,21 @@
+# Results: deepseek-ai/DeepSeek-V4-Pro-0813:novita via https://router.huggingface.co/v1, val_input_n9.jsonl
+
+Decoding: greedy (temperature 0), seed 42. Thinking switch: api_options {"chat_template_kwargs": {"thinking": false}}.
+
+| Metric | nothink |
+|---|---|
+| Valid submission | True |
+| Emotion accuracy | 0.2222 |
+| Emotion macro-F1 | 0.0227 |
+| Profile micro-F1 (avg) | 0.0 |
+| Profile exact-match (avg) | 0.4444 |
+| Parse failures | 8 |
+| Blank predictions (scored as wrong) | 0 |
+| Avg latency per sample (s, API) | 6.68 |
+| Avg reasoning length (chars) | 355.2 |
+| Wall time (min) | 1.0 |
+| Reply length mean (chars) | 167.2 |
+
+Reference: always-anxiety accuracy = 0.2222, gold reply length mean = 306.9 chars.
+
+Check: 'think' should be clearly slower and (with --stream) show reasoning > 0 chars. If not, the provider ignored the thinking switch.

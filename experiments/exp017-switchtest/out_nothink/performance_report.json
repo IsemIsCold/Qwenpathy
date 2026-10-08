@@ -1,0 +1,19 @@
+{
+  "version": "exp3_streaming (official prompt, history format and parser)",
+  "api_model": "deepseek-ai/DeepSeek-V4-Pro-0813:novita",
+  "base_url": "https://router.huggingface.co/v1",
+  "samples": 9,
+  "average_latency_ms": 6358.51,
+  "median_latency_ms": 4742.804,
+  "avg_reasoning_chars": 269.1,
+  "parse_failure_count": 7,
+  "parse_failure_ids": [
+    "val_conv_000001_t3",
+    "val_conv_000002_t5",
+    "val_conv_000003_t5",
+    "val_conv_000003_t7",
+    "val_conv_000004_t3",
+    "val_conv_000005_t9",
+    "val_conv_000006_t5"
+  ]
+}

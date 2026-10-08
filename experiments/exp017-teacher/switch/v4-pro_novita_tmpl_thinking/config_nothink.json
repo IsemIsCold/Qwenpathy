@@ -1,0 +1,23 @@
+{
+  "backend": "openai_compatible",
+  "model_path": "./model",
+  "trust_remote_code": false,
+  "device_map": "auto",
+  "torch_dtype": "auto",
+  "base_url": "https://router.huggingface.co/v1",
+  "api_model": "deepseek-ai/DeepSeek-V4-Pro-0813:novita",
+  "api_key": "",
+  "request_timeout_seconds": 600,
+  "api_options": {
+    "chat_template_kwargs": {
+      "thinking": false
+    }
+  },
+  "generation": {
+    "max_new_tokens": 1200,
+    "seed": 42,
+    "do_sample": false
+  },
+  "performance_rounds": 100,
+  "hardware_label": "api:router.huggingface.co"
+}

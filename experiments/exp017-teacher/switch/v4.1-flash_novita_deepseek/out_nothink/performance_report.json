@@ -1,0 +1,11 @@
+{
+  "version": "exp3_streaming (official prompt, history format and parser)",
+  "api_model": "deepseek-ai/DeepSeek-V4.1-Flash:novita",
+  "base_url": "https://router.huggingface.co/v1",
+  "samples": 9,
+  "average_latency_ms": 3262.214,
+  "median_latency_ms": 3055.821,
+  "avg_reasoning_chars": 0.0,
+  "parse_failure_count": 0,
+  "parse_failure_ids": []
+}

@@ -50,7 +50,9 @@ done
 | Throughput | 2.24 samples/s | 2.31 samples/s |
 | Mean train loss | 1.315 | **1.130** |
 
-Loss curve of the full run ([train/trainer_log.jsonl](train/trainer_log.jsonl), mean per 200 steps):
+![Training loss of the full run](loss_curve.svg)
+
+Same data as a table ([train/trainer_log.jsonl](train/trainer_log.jsonl), mean per 200 steps):
 
 | Steps | 1–200 | 201–400 | 401–600 | 601–800 | 801–1000 | 1001–1200 | 1201–1400 | 1401–1600 | 1601–1800 | 1801–1868 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -106,5 +108,6 @@ Training 1 h 48 min on 2 GPUs ≈ 3.6 card-hours, plus ≈ 0.4 for the eval boot
 
 - `configs/`: `full.yaml`, `merge_full.yaml`, `pilot_ddp.yaml`, `run_t7.sh` (exact files used on Migu)
 - `train/`: `train_results.json`, `trainer_log.jsonl` (loss per step)
+- `loss_curve.svg`: the chart above, generated from `train/trainer_log.jsonl` (grey = per-step loss, blue = 50-step moving average, grid lines = checkpoints)
 - `n50/`, `n50b/`: `metrics.json` (eval.py), `performance_report.json` (latency), `submission.jsonl` (the 50 predictions)
 - Not in git (weights): LoRA adapter + checkpoints at steps 467 / 934 / 1401 in `/mnt/storage/runs/full`; merged model in `/root/merged/full` on Migu.
