@@ -34,11 +34,11 @@ These are API numbers. The fine-tuned model runs on vLLM, so **T4 below re-measu
 
 | Area | Owner | Owns |
 |---|---|---|
-| Captain, prompt, Migu, submissions | **Ismail F.** | `participant/`, all submissions, merging PRs. **Built and ran the whole fine-tuning chain on Migu (T1–T7, E1): SFT data rebuild + sign-off, training env, eval harness, V1.8 baseline, pilot, 2-GPU DDP, full run, merges.** |
-| Training | **Ismail F.** (T1–T7) · Ismail M. (P2) | Ismail F.: SFT data rebuild + `check_sft.py` (T1), LLaMA-Factory configs, training runs on Migu, merged weights (T2–T7). Ismail M.: P2 second run, P3 with Elly. |
+| **Captain · training lead · classification & prompt · infrastructure (Oct 4–8)** | **Ismail F.** | Captain: all submissions, merging PRs, organiser questions. Classification & prompt: model choice (EXP-003/004), prompt work EXP-005–016 → V1.8, `participant/`. Training lead: SFT data rebuild + sign-off (T1), Migu training env, eval harness, V1.8 baseline, pilot, full run, merges (T2–T7). Infrastructure while Elly was out: Migu setup + submission #1 (B7, B9), 2-GPU DDP (E1). |
+| Training | **Ismail F.** (lead, T1–T7) · Ismail M. (P2) | Ismail M.: P2 second run, P3 with Elly. |
 | Dataset | **Zakaria** | val/train splits, data stats, truncation of long conversations |
 | Evaluation | **Yahya** | `validate.py`, `eval.py`, `analyze.py` |
-| Infrastructure + latency | **Elly** (back Oct 8) | Migu instances + private images, 2-GPU launch, card-hour ledger, submission check (T9), latency measurement + P3 |
+| Infrastructure + latency | **Elly** (from Oct 8; covered by Ismail F. Oct 4–8) | Migu instances + private images, 2-GPU launch, card-hour ledger, submission check (T9), latency measurement + P3 |
 
 ## Phase 3a: V2 — fine-tuning on Migu (Oct 6–11)
 

@@ -52,7 +52,7 @@ Elly ──image + latency──► Ismail F. (submissions)
 
 ---
 
-## Ismail F.: classification, prompt, captain
+## Ismail F.: captain, training lead, classification & prompt, infrastructure (Oct 4–8)
 
 | Delivered | File | Status |
 |---|---|---|
@@ -82,7 +82,7 @@ Elly ──image + latency──► Ismail F. (submissions)
 
 ---
 
-## Ismail M.: training
+## Ismail M.: training support (P2)
 
 | Delivered | File | Status |
 |---|---|---|
@@ -95,7 +95,7 @@ Elly ──image + latency──► Ismail F. (submissions)
 
 ---
 
-## Elly: infrastructure
+## Elly: infrastructure (from Oct 8; Ismail F. covered Oct 4–8)
 
 | Delivered | File | Status |
 |---|---|---|
