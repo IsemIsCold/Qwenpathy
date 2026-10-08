@@ -52,7 +52,7 @@ Elly ──image + latency──► Ismail F. (submissions)
 
 ---
 
-## Ismail F.: captain, training lead, classification & prompt, infrastructure (Oct 4–8)
+## Ismail F.: captain, training lead (QLoRA), Migu & infrastructure, classification & prompt
 
 | Delivered | File | Status |
 |---|---|---|
@@ -95,7 +95,7 @@ Elly ──image + latency──► Ismail F. (submissions)
 
 ---
 
-## Elly: infrastructure (from Oct 8; Ismail F. covered Oct 4–8)
+## Elly: infrastructure support (joins Oct 8; the Migu setup and all training runs were built by Ismail F.)
 
 | Delivered | File | Status |
 |---|---|---|
