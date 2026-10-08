@@ -1,6 +1,6 @@
 # Who built what, and how it helps you
 
-> Last updated: **2026-10-04**. Each section: what the person delivered, where it lives, and which teammates depend on it. Commands for every tool are in [how-to.md](how-to.md).
+> Last updated: **2026-10-08**. Each section: what the person delivered, where it lives, and which teammates depend on it. Commands for every tool are in [how-to.md](how-to.md).
 
 ## The dependency map
 
@@ -52,7 +52,7 @@ Elly ──image + latency──► Ismail F. (submissions)
 
 ---
 
-## Ismail F.: classification, prompt, captain
+## Ismail F.: captain, training lead (QLoRA), Migu & infrastructure, classification & prompt
 
 | Delivered | File | Status |
 |---|---|---|
@@ -64,7 +64,16 @@ Elly ──image + latency──► Ismail F. (submissions)
 | Qwen3-14B vs 8B, 50 pts → **decision: 8B non-thinking** | [`experiments/exp004-*`](../experiments/exp004-model-size/README.md) | done |
 | Training-data builder (imports the inference prompt) | [`train/build_sft.py`](../train/build_sft.py) | done (I1) |
 | Technical plan, organiser questions | [`docs/technical-plan.md`](technical-plan.md), [`docs/organiser-answers.md`](organiser-answers.md) | maintained |
-| Better prompt (emotion first, label definitions, strict profile, reply length) | EXP-005 | doing (B5) |
+| Better prompt (emotion first, label definitions, strict profile, reply length) | EXP-005 to EXP-016 → V1.8 | done (B5) |
+| Migu setup, val50 run, private image, **submission #1** (did Elly's B7 while she was out) | `participant/`, LOG.md | done (B7, B9) |
+| Teacher test: DeepSeek V4.1-Flash as P2 data tool | `experiments/exp017-teacher/` | done (EXP-017) |
+| **SFT data rebuild** with the frozen V1.8 prompt + `check_sft.py` sign-off (17,745 → 14,942 train after the 350-char filter) | [`train/build_sft.py`](../train/build_sft.py), [`train/check_sft.py`](../train/check_sft.py) | done (T1, Oct 6–7) |
+| **Migu training environment**: venv `/opt/train_venv` on `conda_env`, smoke test, `qwen3` + `enable_thinking: false` template fix, `torchrun` shim | `/mnt/storage/configs`, TASKS T2 | done (T2, Oct 7) |
+| **vLLM eval harness on Migu** (start.sh + validate + eval, model override by env) | TASKS T3 | done (T3, Oct 7) |
+| **V1.8 baseline on Migu vLLM** = the bar for fine-tuning (acc 0.54 / 0.62) | TASKS T4, LOG.md | done (T4, Oct 7) |
+| **Pilot QLoRA** (2k ex) + **first 2-GPU DDP run** | `configs/pilot_ddp.yaml`, TASKS T5 / E1 | done (T5, E1, Oct 8) |
+| **Pilot gate**: acc 0.68 / 0.78, ROUGE-L 0.237 / 0.259 | TASKS T6, LOG.md | done (T6, Oct 8) |
+| **Full QLoRA run + merge** (14,942 ex, 1 h 48 min): **acc 0.80 / 0.86, ROUGE-L 0.269 / 0.293** = submission #2 candidate | `configs/full.yaml`, `/root/merged/full`, TASKS T7, LOG.md | done (T7, Oct 8) |
 
 **How it helps you**
 - **Ismail M.:** the base model is decided (Qwen3-8B, non-thinking), and `build_sft.py` gives you training data in LLaMA-Factory format that matches inference byte for byte.
@@ -73,20 +82,20 @@ Elly ──image + latency──► Ismail F. (submissions)
 
 ---
 
-## Ismail M.: training
+## Ismail M.: training support (P2)
 
 | Delivered | File | Status |
 |---|---|---|
 | Base model choice | [technical-plan.md §2](technical-plan.md) | done: Qwen3-8B non-thinking (B8) |
 | API setup on his laptop | `scripts/setup-api-env.ps1` | done |
-| LoRA config (rank, lr, epochs, seq len) + smoke test | `train/` | todo (I2) |
+| LoRA config, SFT data rebuild, smoke test, training runs | Migu | done by Ismail F. (T1–T7) |
 
 **What he needs from others:** the SFT data from `build_sft.py` (ready), the final prompt from B5 (rebuild the data when it changes), and `eval.py` to judge each checkpoint.
 **What others need from him:** merged bf16 weights that load offline in `participant/model`. Agree the format with Elly.
 
 ---
 
-## Elly: infrastructure
+## Elly: infrastructure support (joins Oct 8; the Migu setup and all training runs were built by Ismail F.)
 
 | Delivered | File | Status |
 |---|---|---|
@@ -106,6 +115,6 @@ Elly ──image + latency──► Ismail F. (submissions)
 | Evaluation | validate, eval, 64 tests | BLEU/ROUGE/BERTScore merged (I4) |
 | Model choice | Qwen3-8B non-thinking | — |
 | Prompt | baseline measured | B5: V0–V3 on 50 pts, winner on 200 |
-| Training | data ready | I2: QLoRA smoke test, then full run |
-| Infrastructure | — | B7: Migu + official image + latency |
-| Submissions | 0 of 5 used | #1 after B7 + B5 |
+| Training | T1–T7 by Ismail F. (data rebuild, env, pilot, full run, merges): full model acc 0.80 / 0.86 | T9 submission check, P2 only if P1 finds a clear fix |
+| Infrastructure | B7 done by Ismail F.; 2-GPU DDP works (Oct 8) | Elly back Oct 8: card-hour ledger, images, latency, T9 |
+| Submissions | 1 of 5 used (V0, Oct 4) | #2 = T7 full model after T9 |
