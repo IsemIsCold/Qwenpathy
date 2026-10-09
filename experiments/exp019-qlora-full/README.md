@@ -5,7 +5,7 @@
 | **Date** | 2026-10-07 / 08 |
 | **Author** | Ismail F. (data rebuild, Migu setup, pilot, full run, merge, eval) |
 | **Goal** | Fine-tune Qwen3-8B on the training set with the frozen V1.8 prompt and beat V1.8 on **both** val slices (TASKS rule for submission #2). |
-| **Status** | **Done. PASS.** The full model beats V1.8 and the pilot on every metric on n50 and n50b. It is the candidate for submission #2 (after T9). |
+| **Status** | **Done. PASS.** The full model beats V1.8 and the pilot on every metric on n50 and n50b. T9 submission check PASS → **submitted as #2 on Oct 9.** |
 
 ## Setup
 
@@ -58,7 +58,37 @@ Same data as a table ([train/trainer_log.jsonl](train/trainer_log.jsonl), mean p
 |---|---|---|---|---|---|---|---|---|---|---|
 | Loss | 1.348 | 1.171 | 1.143 | 1.127 | 1.091 | 1.095 | 1.063 | 1.069 | 1.046 | 1.056 |
 
-Fast drop in the first 200 steps (≈2.2 → ≈1.2: the model learns the JSON format and the label set), then a slow, steady decline with no divergence. Still slightly falling at the end, so one epoch did not overfit. The log starts at step 9: steps 1–8 were overwritten when the run was accidentally launched twice (see below).
+### Loss curve analysis
+
+Mean loss per checkpoint quarter (each quarter = 467 steps ≈ 3,700 examples):
+
+| Steps | 9–467 | 468–934 | 935–1401 | 1402–1868 |
+|---|---|---|---|---|
+| Mean loss | 1.21 | 1.118 | 1.078 | 1.057 |
+| Drop vs previous quarter | – | −0.09 | −0.040 | −0.021 |
+| Learning rate at the end of the quarter | 8.8e-5 | 5.3e-5 | 1.6e-5 | ≈0 |
+
+**1. Three phases.**
+- **Warm-up, steps 1–56** (3% of the run; the learning rate ramps from 0 to 1e-4). Loss falls fastest: 2.25 → about 1.37 (mean 1.76 over steps 9–30, 1.37 over steps 31–56).
+- **Format learning, steps 56–200** (≈1,600 examples). Loss 1.34 → 1.26. The model learns the fixed parts of the answer: the JSON structure, the 16 emotion labels, the profile vocabulary. These tokens are almost free after this phase.
+- **Content learning, steps 200–1868.** A slow, steady decline (−0.08 per 1,000 steps). This is the hard part: choosing the right emotion and writing a reply close to the gold one.
+
+**2. Diminishing returns, partly by design.** Each quarter gains about half as much as the one before (−0.09, −0.04, −0.02). Part of the flattening is the cosine schedule: in the last quarter the learning rate drops from 1.6e-5 to zero, so the model is barely updating any more. The 50-step average is flat over the last ≈400 steps (1.049 → 1.055).
+
+**3. No overfitting, and the curve tells us so directly.** This is **one epoch**: every step's loss is measured on 8 examples the model has never trained on, before it learns from them. So the training loss here is effectively a held-out loss on the training distribution. If the model were memorising instead of generalising, this loss would not keep falling on new examples. The val results (n50 / n50b, a different set of conversations) confirm it.
+
+**4. The noise is normal and stable.** The per-step loss has a standard deviation of about 0.13 from step 30 to the end, and it does not grow. It comes from batch composition: each step sees only 8 conversations of very different length and difficulty. Only 6 of the 1,668 steps after step 200 go above 1.5, all before step 600, and none since. No spikes, no divergence: the learning rate (1e-4) and the LoRA setup are stable.
+
+**5. Reproducible.** After 2,000 examples (step 250), the full run's mean loss is 1.319, the same as the pilot's 1.315 on its own 2,000 examples. The extra 12,942 examples then took the loss from ≈1.21 to ≈1.05, and emotion accuracy from 0.68 / 0.78 (pilot) to 0.80 / 0.86.
+
+**6. Why the loss stops around 1.05 instead of going to zero.** Loss is the average cross-entropy per answer token. 1.055 means a perplexity of e^1.055 ≈ 2.9: on average the model hesitates between about 3 plausible next tokens. But the JSON keys and labels are close to zero loss by now, so almost all of the remaining loss is in the free-text reply, and a conversation has many good replies, not one. That part of the loss can never reach zero, and a lower training loss does not automatically mean better replies.
+
+**What this means for the next run (P2):**
+- **A second epoch is not worth 3.6 card-hours by itself.** The last quarter gained only 0.02, and in a second epoch the model would see each example again, so falling training loss would increasingly mean memorisation. Only the val slices could tell whether it helps.
+- **Better use of a second run: targeted data** for the remaining errors (fear → anxiety, relaxed → anxiety), if the organisers allow generated data (EXP-017, Z4).
+- **Measure what this run could not.** Add a validation loss on the 768-example dev set every ~250 steps (`val_size` / `eval_steps` in LLaMA-Factory; a few minutes per eval). Then a second epoch can be judged on held-out loss instead of by guessing.
+
+Limitations: steps 1–8 are missing from the log (overwritten by the accidental second launch); there is no validation loss for this run (no dev eval was configured); the log has no gradient norms, only loss and learning rate.
 
 ## Results
 
@@ -98,9 +128,23 @@ For reference, the DeepSeek V4.1-Flash "teacher" via API (EXP-017) scored 0.62 /
 
 Training 1 h 48 min on 2 GPUs ≈ 3.6 card-hours, plus ≈ 0.4 for the eval boot. The exact total for Oct 7–8 comes from the Migu page (E2, LOG.md).
 
+## Submission check (T9, Oct 9)
+
+The weights were moved into `/root/participant/model` and the model was run exactly the way the organisers run it: plain `bash /root/participant/start.sh <input> <outdir>`, no `VLLM_*` overrides, on one 100-line file (n50 then n50b, so `performance_report.json` covers exactly these points).
+
+| | n50: T7 → T9 | n50b: T7 → T9 |
+|---|---|---|
+| Emotion accuracy | 0.80 → 0.80 | 0.86 → 0.84 (1 label) |
+| Macro-F1 | 0.510 → 0.509 | 0.597 → 0.574 |
+| Profile micro-F1 / exact | 0.489 / 0.453 → 0.490 / 0.447 | 0.477 / 0.500 → 0.495 / 0.507 |
+| ROUGE-L | 0.269 → 0.267 | 0.293 → 0.292 |
+| BLEU-4 | 0.130 → 0.130 | 0.151 → 0.147 |
+
+All within vLLM run-to-run noise, so the swap is correct (the base model scores 0.54 / 0.62). 100/100 ids in input order, `validate.py` 0 errors, 0 parse failures. Latency on the first 100: mean **1.55 s**, median 1.35 s, p95 3.59 s, max 4.85 s (submission #1: 1.41 s).
+
 ## Decision
 
-- **Submission #2 = this model** (`/root/merged/full`), after the T9 submission check (plain `start.sh` with the weights in `participant/model`, validate, latency on the first 100).
+- **Submission #2 = this model**: sent Oct 9 after the T9 check above.
 - **T8 (checkpoint sweep) dropped:** the final checkpoint is clearly best; differences between checkpoints on 50 samples would be noise.
 - The merged pilot (`/root/merged/pilot_ddp`) is the fallback; V1.8 is the last resort.
 

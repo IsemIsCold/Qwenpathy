@@ -1,9 +1,11 @@
 # Tasks
 
 Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own rows, and edit them in your PR.
-**Last full update: Oct 8 (afternoon).** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
+**Last full update: Oct 9 (evening).** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
 
-## Where we are (Oct 8)
+## Where we are (Oct 9)
+
+- **Oct 9: Submission #2 is in = the T7 full fine-tuned model** (T9 PASS, T10 done). Plain `start.sh` on 100 val points: n50 acc **0.80**, n50b **0.84**, ROUGE-L 0.267 / 0.292 (same as T7 within noise); validate.py 0 errors; latency mean **1.55 s** (sub #1: 1.41 s). On Migu now: `/root/participant/model` = full model, `/root/base_qwen3_8b` = base (all training configs point there), `/root/merged/pilot_ddp` = fallback. Official score pending. **Next: P1 (no GPU), then decide on P2.**
 
 - **Oct 8: Elly is back** and takes back infrastructure (from Ismail F.) and latency (from Yahya). His tasks: see **Infrastructure (Elly)** below. T2/T3/T4 were finished while he was out; details in the T rows and LOG.md.
 - **Oct 8: the whole fine-tuning chain is done (T5 pilot on 2 GPUs, T6 gate PASS, T7 full run), all run by Ismail F.** Rule learned: **train in one boot, eval in a fresh boot** (GPUs break when a training process exits).
@@ -11,7 +13,7 @@ Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own ro
 - **Oct 8: Zakaria's B2/B6 reviewed.** Data is correct (val numbers match an independent recount), but the stats doc is hand-edited, real token counts are never printed, and one chart is blank. Real Qwen3 ratio on val ≈ **1.6 chars/token** (not 1.4, not 2+). His tasks are now spelled out step by step in **Dataset (Zakaria)** below + [docs/briefs/zakaria.md](docs/briefs/zakaria.md). **P4 is moved up to Oct 10 (= Z1)** so truncation is in before T9/submission #2. New research task **Z4** (due Oct 12) picks the long-reply filter + augmentation recipe for P2.
 
 - **Submission #1 (V0) is in** (Oct 4). Official score pending.
-- **Prompt phase is finished.** 16 experiments (EXP-005 to EXP-016): no prompt beats V0 on emotion beyond noise, but **V1.8** wins clearly on profile, confirmed on an untouched val slice (n50b). V1.8 is frozen and is now `participant/run_inference.py` on `main` (V0 = commit `e5209d2`).
+- **Prompt phase is finished.** 12 experiments (EXP-005 to EXP-016): no prompt beats V0 on emotion beyond noise, but **V1.8** wins clearly on profile, confirmed on an untouched val slice (n50b). V1.8 is frozen and is now `participant/run_inference.py` on `main` (V0 = commit `e5209d2`).
 - **Next phase: V2 = fine-tuning** (QLoRA on Qwen3-8B). Emotion (25 pts) can only improve through training now.
 - **Submission #2 waits for the first training results.** Rule: a fine-tuned model is submitted only if it beats V1.8 on **both** n50 and n50b. Fallback: if nothing beats V1.8 by **Oct 16**, submit V1.8.
 - **Oct 6: T1 done** — SFT data verified (`check_sft.py` PASS). Training uses `cutoff_len 6144`. Note for eval: val gold `val_conv_000331` contains leaked `<think>` reasoning (not in n50/n50b).
@@ -68,8 +70,8 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 | T6 | **Pilot gate: PASS (Oct 8).** Merged pilot (`/root/merged/pilot_ddp`) via `env VLLM_MODEL_DIR=... VLLM_SERVED_MODEL_NAME=model bash /root/participant/start.sh` + `eval.py`. n50: acc **0.68** (T4 0.54), macro-F1 0.339, profile micro-F1 0.410 / exact 0.420, ROUGE-L **0.237** (0.174), BLEU-4 0.104, reply median 128 (gold 146), latency 1.62 s. n50b: acc **0.78** (0.62), macro-F1 0.449, profile 0.340 / 0.380, ROUGE-L **0.259** (0.197), BLEU-4 0.133, median 110 (gold 100.5), latency 1.55 s. 100% valid JSON, anxiety ≈46% of predictions. | Ismail F. | T4, T5 | Oct 8 | done |
 | T7 | **Full QLoRA run: done Oct 8.** 14,942 ex × 1 epoch (`migu_train`), 2 GPUs DDP (`configs/full.yaml`, global batch 8, 1,868 steps, checkpoints every 467), 1 h 48 min, 2.31 samples/s. Merged → `/root/merged/full`. n50: acc **0.80**, macro-F1 0.510, profile 0.489 / 0.453, ROUGE-L **0.269**, BLEU-4 0.130, latency 1.66 s. n50b: acc **0.86**, macro-F1 0.597, profile 0.477 / 0.500, ROUGE-L **0.293**, BLEU-4 0.151, latency 1.50 s. The chained eval in `configs/run_t7.sh` died (GPUs lost after training) → rerun on a fresh boot. | Ismail F. | T6 pass | Oct 8 | done |
 | T8 | ~~Checkpoint sweep~~ **Dropped (Oct 8):** the final checkpoint is clearly best; differences between checkpoints on 50 samples would be noise. Merge already done in T7. | Ismail F. | T7 | — | dropped |
-| T9 | **Submission check** of the full model: no-GPU boot → `mv /root/participant/model /root/participant/model_base` and copy `/root/merged/full` to `/root/participant/model`; fresh 2-GPU boot → plain `start.sh` on Migu val50 end to end, `validate.py`, latency (first 100, `performance_report.json`; compare T7 1.66 / 1.50 s, submission #1 1.41 s); save the submission image. Budget ≈ 0.5 card-hours. | Elly (+ Ismail F.) | T7 | Oct 10 | todo |
-| T10 | **Submission #2 = T7 full model** (beats V1.8 and the pilot on both n50 and n50b). Log it in LOG.md before sending. | Ismail F. | T9 | Oct 10 | todo |
+| T9 | **Submission check: PASS (Oct 9).** No-GPU boot: base → `/root/base_qwen3_8b`, `/root/merged/full` → `/root/participant/model`, 7 training configs repointed to the base. Fresh 2-GPU boot: plain `start.sh` (no env overrides) on n50 + n50b in one 100-line file. n50 acc 0.80 / ROUGE-L 0.267, n50b acc 0.84 / ROUGE-L 0.292 (= T7 within noise); 100/100 ids in order; validate.py 0 errors; 0 parse failures; latency mean **1.55 s**, median 1.35, p95 3.59. vLLM 0.19.0 and run_inference sha = main checked before saving. Organiser sample test + long5 stress run skipped (see LOG). Image saved. | Ismail F. | T7 | Oct 10 | done |
+| T10 | **Submission #2 = T7 full model: sent Oct 9, successful.** Official score pending. | Ismail F. | T9 | Oct 10 | done |
 
 ### Infrastructure (Elly)
 
@@ -78,7 +80,7 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 | E1 | **2-GPU DDP launch.** Test the `torchrun` shim (`/opt/train_venv/bin/torchrun` → `python -m torch.distributed.run`, then `export PATH=/opt/train_venv/bin:$PATH`; check `which torchrun`) with a short smoke run on 2 GPUs before T7. The pilot fell back to 1 GPU after two failed launches; 2 GPUs ≈ 1.6 h vs ≈ 3 h for T7. **Done by Ismail F. on Oct 8: the pilot rerun (T5) ran DDP on 2 GPUs.** | — | Oct 9 | done |
 | E2 | **Card-hour ledger + shutdown check.** Fill in the Oct 7 actuals in LOG.md from the Migu page; confirm the GPU instance is off after every session. | — | Oct 8 | todo |
 | E3 | **Private images:** save the training image `npu-ic-train`; keep a clean submission image with `conda_env` verified (vLLM 0.19.0, transformers 4.57.6). | — | Oct 9 | todo |
-| E4 | **Latency levers** (with T9 numbers): `max_new_tokens` 1200, TP2, `max_model_len`. Then P3. | T9 | Oct 12 | todo |
+| E4 | **Latency levers** (T9 numbers: mean 1.55 s, median 1.35, p95 3.59 on the full model; sub #1 1.41 s): `max_new_tokens` 1200, TP2, `max_model_len`. Then P3. | T9 | Oct 12 | todo |
 | E5 | Put `bert-base-chinese` on the instance (offline, no GPU) so BERTScore runs in `eval.py`. | — | Oct 10 | todo |
 
 ### Dataset (Zakaria)
@@ -96,7 +98,7 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 
 | # | Task | Owner | Due | Status |
 |---|---|---|---|---|
-| P1 | Error analysis of the fine-tuned model with `analyze.py --compare` against V1.8: which emotions / profile tags got worse, reply length vs latency | Yahya | Oct 12 | todo |
+| P1 | Error analysis of the fine-tuned model with `analyze.py --compare` against V1.8: which emotions / profile tags got worse, reply length vs latency. **Also:** re-score the T9 outputs (`/mnt/storage/out/t9`) with the V1.8 tag filter off (`emotionally_stable`, `study_exam`, `colloquial`): the filter was built for the prompted model, the fine-tuned model may predict these correctly now. No GPU. | Yahya | Oct 12 | todo |
 | P2 | Second training run only if P1 shows a clear fix (e.g. class balance, longer/shorter targets, 2 epochs) **and** ≥ 11 card-hours remain (6 for the run + 5 reserve). One run max. | Ismail M. | Oct 14 | todo |
 | P3 | **AWQ test** (only if the organisers allow quantised models): quantise the merged model (AutoAWQ / llm-compressor), compare FP16 vs AWQ on Migu: latency + accuracy on val50. Switch only if latency drops clearly and accuracy stays within ~2 points. Wait for the latency formula (O1). | Elly + Ismail M. | Oct 15 | todo |
 | P4 | Truncation at inference for very long histories (same rule as `build_sft.py`): **moved up, now Z1** (see *Dataset (Zakaria)*) | Zakaria | **Oct 10** | todo |
