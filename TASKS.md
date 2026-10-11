@@ -1,9 +1,11 @@
 # Tasks
 
 Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own rows, and edit them in your PR.
-**Last full update: Oct 9 (evening).** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
+**Last full update: Oct 11.** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
 
-## Where we are (Oct 9)
+## Where we are (Oct 11)
+
+- **Oct 11: P1 error review done → no emotion-targeted P2.** The 17 emotion errors of the full model on n50 + n50b: 8 model wrong, 6 arguable, 3 gold wrong (`docs/p1-error-review.md`). The real errors are worried-then-relieved messages, where the training gold itself is split (anxiety 38% vs relaxed 24%), so retraining would trade them for new errors. Details and data: `docs/p2-imbalance-plan.md`. **Submission #2 stays the model to beat; card-hours go to latency (E4/P3).**
 
 - **Oct 9: Submission #2 is in = the T7 full fine-tuned model** (T9 PASS, T10 done). Plain `start.sh` on 100 val points: n50 acc **0.80**, n50b **0.84**, ROUGE-L 0.267 / 0.292 (same as T7 within noise); validate.py 0 errors; latency mean **1.55 s** (sub #1: 1.41 s). On Migu now: `/root/participant/model` = full model, `/root/base_qwen3_8b` = base (all training configs point there), `/root/merged/pilot_ddp` = fallback. Official score pending. **Next: P1 (no GPU), then decide on P2.**
 
@@ -98,11 +100,11 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 
 | # | Task | Owner | Due | Status |
 |---|---|---|---|---|
-| P1 | Error analysis of the fine-tuned model with `analyze.py --compare` against V1.8: which emotions / profile tags got worse, reply length vs latency. **Also:** re-score the T9 outputs (`/mnt/storage/out/t9`) with the V1.8 tag filter off (`emotionally_stable`, `study_exam`, `colloquial`): the filter was built for the prompted model, the fine-tuned model may predict these correctly now. No GPU. | Yahya | Oct 12 | todo |
-| P2 | Second training run only if P1 shows a clear fix (e.g. class balance, longer/shorter targets, 2 epochs) **and** ≥ 11 card-hours remain (6 for the run + 5 reserve). One run max. | Ismail M. | Oct 14 | todo |
+| P1 | Error analysis of the fine-tuned model. **Done Oct 11 (Ismail F.):** review of the 17 emotion errors → 8 model wrong / 6 arguable / 3 gold wrong, no emotion-targeted P2 (`docs/p1-error-review.md`, `docs/p2-imbalance-plan.md`). Tag-filter re-score **dropped**: needs a GPU re-run and the 3 tags are rare in gold (≤ 4% of val points). **Still open (Yahya):** `analyze.py` v4.1 `--compare` T9 vs V1.8 for profile / reply regressions. | Yahya (+ Ismail F.) | Oct 12 | doing |
+| P2 | ~~Second training run~~ **Dropped for emotion (Oct 11, P1):** the remaining errors sit where the training labels are split, so a rebalanced run can't fix them without new errors. Reopens only for rare-class generated data if the organisers allow it (O1), with the gate in `docs/p2-imbalance-plan.md` §6. | Ismail M. | Oct 14 | dropped |
 | P3 | **AWQ test** (only if the organisers allow quantised models): quantise the merged model (AutoAWQ / llm-compressor), compare FP16 vs AWQ on Migu: latency + accuracy on val50. Switch only if latency drops clearly and accuracy stays within ~2 points. Wait for the latency formula (O1). | Elly + Ismail M. | Oct 15 | todo |
 | P4 | Truncation at inference for very long histories (same rule as `build_sft.py`): **moved up, now Z1** (see *Dataset (Zakaria)*) | Zakaria | **Oct 10** | todo |
-| P5 | **Submission #3** with the best of P2/P3 | Ismail F. | Oct 16 | todo |
+| P5 | **Submission #3** only if P3 (latency) gives a clear win without losing accuracy | Ismail F. | Oct 16 | todo |
 | P6 | **Fallback:** if T7 fails T9 or scores worse officially, submit the merged pilot (`/root/merged/pilot_ddp`, also beats V1.8 on both slices). V1.8 with base weights stays the last resort. | Ismail F. | Oct 16 | todo |
 
 ## Phase 4: finalise (Oct 17–20)

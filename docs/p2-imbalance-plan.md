@@ -5,7 +5,16 @@
 | **Date** | 2026-10-10 |
 | **Input** | Yahya's research report (Kimi, Oct 9), re-checked against our own data, the T7/T9 outputs and the official rules |
 | **Scope** | What a second training run (P2) can realistically fix, and what it costs |
-| **Status** | Proposal. Decides P1 → P2. |
+| **Status** | **Decided Oct 11: no emotion-targeted P2.** Submission #2 stays. See *Decision* below. |
+
+## Decision (Oct 11)
+
+P1 step 1 is done (`docs/p1-error-review.md`, reviewed by Ismail F. from English summaries): of the 17 errors, **8 model wrong, 6 arguable, 3 gold wrong**.
+
+- About half the errors are not real model mistakes.
+- The real ones cluster where a user is worried and then says they feel better (#5, #8, #9 in the review sheet). For exactly that message type the training gold says `anxiety` 38% vs `relaxed` 24% (§4), and the test set almost certainly comes from the same labeller. Predicting `anxiety` there is the bet that is right most often; teaching the model otherwise would fix these and break more anxiety-labelled test cases.
+- **So: no second training run aimed at emotion.** Submission #2 stays the model to beat. Card-hours go to latency (E4/P3) and the remaining reserve.
+- P2 reopens only for option B (rare-class generated data) **if** the organisers allow generated data, and only through the gate in §6.
 
 ## TL;DR
 
@@ -114,11 +123,11 @@ Our model writes the emotion as text inside the JSON answer. LLaMA-Factory train
 
 ### P1: no GPU, do first
 
-1. **Read the 17 errors above with a Chinese reader** (Ismail M. or Elly) and mark each one: *model wrong*, *gold arguable*, or *gold wrong*. If most are arguable, emotion-targeted P2 is off.
-2. **Profile tag filter:** re-score `/mnt/storage/out/t9/submission.jsonl` with the V1.8 filter off (`emotionally_stable`, `study_exam`, `colloquial`). The filter was built for the prompted model. If profile F1 goes up, that's a parser-only change: no training, no card-hours.
+1. **Read the 17 errors above with a Chinese reader** (Ismail M. or Elly) and mark each one: *model wrong*, *gold arguable*, or *gold wrong*. Sheet with the full Chinese text: `docs/p1-error-review.md`. If most are arguable, emotion-targeted P2 is off.
+2. ~~Profile tag filter re-score~~ **Dropped (Oct 10).** `submission.jsonl` already has the tags removed and `start.sh` saves no raw outputs, so it would need a GPU re-run. It isn't worth one: the three tags are rare in gold (val: `study_exam` 4.0%, `colloquial` 2.3%, `emotionally_stable` 0.4% of points), so turning the filter off can win back very little and risks false positives.
 3. **`analyze.py --compare`** (Yahya's v3) on T9 vs V1.8, to look for anything else that got worse.
 
-### P2: only if P1 justifies it
+### P2: only if P1 justifies it (Oct 11: P1 did not; option A dropped, option B waits for O1)
 
 | Option | Change | When | Est. card-hours |
 |---|---|---|---|
@@ -133,7 +142,7 @@ Our model writes the emotion as text inside the JSON answer. LLaMA-Factory train
 ### Where else the hours could go
 
 - **Latency (10 points):** T9 mean 1.55 s vs 1.41 s for submission #1. P3/E4 is likely worth more than a P2 run whose emotion gain is uncertain.
-- **Profile (15 points):** the tag-filter re-score costs nothing.
+- **Profile (15 points):** no cheap lever left. The tag filter is not worth a re-run (P1 step 2).
 
 ## 7. Corrections to the original report (for the record)
 
