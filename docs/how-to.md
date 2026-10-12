@@ -23,10 +23,10 @@ Copy-paste commands for every tool, in the order you'll need them. Commands are 
 | Thing | Where it goes | Where to get it |
 |---|---|---|
 | Organiser data: `train_public.jsonl`, `val_public.jsonl` | `data\` | The organisers' dataset link (in the project notes) |
-| Val files: `val_input.jsonl`, `val_gold.jsonl`, `*_n50.jsonl` | `data\` | Make them yourself (§2) or ask Ismail F. |
+| Full val files: `val_input.jsonl`, `val_gold.jsonl` | `data\` | Make them yourself (§2) or ask Ismail F. |
 | Model weights (only for GPU runs) | `participant\model\` | ModelScope: `modelscope download --model Qwen/Qwen3-8B --local_dir participant/model` |
 
-`data\` and `participant\model\` are in `.gitignore`. Never commit them. The rest of `participant\` (`start.sh`, `run_inference.py`, `configs\`, `templates\`) **is in git**: it's the code we submit, so you get it with `git pull`.
+`data\` and `participant\model\` are in `.gitignore`. Never commit them. **Exception:** the fixed eval slices `data\val_{input,gold}_{n50,n50b,n100}.jsonl` *are* in git (since Oct 12), so everyone scores on identical files. n50 = the first 50 val points; n50b = 50 points sampled once with seed 42 from other conversations; n100 = n50 followed by n50b. They never change: don't regenerate them. The rest of `participant\` (`start.sh`, `run_inference.py`, `configs\`, `templates\`) **is in git**: it's the code we submit, so you get it with `git pull`.
 
 > **Use the patched `run_inference.py`.** The official one builds the emotion list from a Python *set*, so the order changes every run and the prompt is never the same twice. The copy in this repo uses `", ".join(sorted(EMOTIONS))` (line 405). Training data and every submission must use it, so never replace it with the organisers' original.
 

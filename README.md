@@ -100,7 +100,7 @@ train/
   check_sft.py          sign-off for the SFT data (leakage, targets, token lengths)   (Ismail F.)
 tests/
   run_tests.py          73 tests for validate.py + eval.py                  (Yahya)
-  test_analyze.py       102 tests for analyze.py v4.1                       (Yahya v3, Ismail F. v4)
+  test_analyze.py       102 tests for analyze.py v4.1 (= Yahya's v3 + review fixes)
 docs/
   how-to.md             how to run everything (start here)
   team-work.md          what each member built, and how it helps the others

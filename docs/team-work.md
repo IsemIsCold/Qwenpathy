@@ -1,18 +1,16 @@
-# Who built what, and how it helps you
+# Who built what
 
-> Last updated: **2026-10-08**. Each section: what the person delivered, where it lives, and which teammates depend on it. Commands for every tool are in [how-to.md](how-to.md).
+> Last updated: **2026-10-12**. What each person delivered and where it lives. Commands for every tool: [how-to.md](how-to.md). Task history with owners: [TASKS.md](../TASKS.md).
 
-## The dependency map
+## How the pieces fit
 
 ```
-Zakaria ──val files──► Yahya (scores them)      ──scores──► everyone's decisions
-   │                   Ismail F. (API runs)
-   │                   Elly (Migu runs)
-   │
-   └──SFT data spec──► build_sft.py ──training data──► Ismail M. (QLoRA) ──weights──► Elly (image)
-                            ▲
-Ismail F. ──prompt (B5)─────┘ (training and inference share one prompt)
-Elly ──image + latency──► Ismail F. (submissions)
+organiser data ──► convert_val.py (Zakaria) ──► fixed val slices n50 / n50b ──► validate.py + eval.py (Yahya) ──► every decision
+       │
+       └──► build_sft.py + check_sft.py ──► QLoRA on Migu ──► merged weights ──► participant/ (start.sh + run_inference.py, V1.8 prompt) ──► submissions
+                     ▲                         (Ismail F.)                                  ▲
+                     └──────────── one prompt, shared by training and inference ────────────┘
+                                   (EXP-005–016: Ismail F. + Ismail M.)
 ```
 
 ---
@@ -21,16 +19,12 @@ Elly ──image + latency──► Ismail F. (submissions)
 
 | Delivered | File | Status |
 |---|---|---|
-| Val → test-format input + gold labels, with `--n` | [`scripts/convert_val.py`](../scripts/convert_val.py) | done (B2) |
-| Every JSONL format we use, documented | [`docs/data-format.md`](data-format.md) | done |
-| Dataset statistics (labels, profiles, lengths, tokens) | [`scripts/compute_stats.py`](../scripts/compute_stats.py) → [`docs/data-stats.md`](data-stats.md) | done (B6, v3) |
-| Training-data rules (split by conversation, truncation) | spec for [`train/build_sft.py`](../train/build_sft.py) | done (I1, coded by Ismail F.) |
+| Val set → test-format input + gold labels (`--n`, `--exclude`, `--sample`) | [`scripts/convert_val.py`](../scripts/convert_val.py) | done (B2) |
+| Every JSONL format we use | [`docs/data-format.md`](data-format.md) | done (§4/§6 slightly out of date) |
+| Dataset statistics: labels, profiles, lengths | [`scripts/compute_stats.py`](../scripts/compute_stats.py) → [`docs/data-stats.md`](data-stats.md) | done (B6). Numbers checked correct on Oct 8 |
+| Training-data rules (split by conversation, history truncation) | spec for `train/build_sft.py` | done (I1) |
 
-**How it helps you**
-- **Everyone:** `val_input_n50.jsonl` / `val_gold_n50.jsonl` are the shared test set. Every experiment uses the same 50 points, so results are comparable.
-- **Ismail F. (prompt):** [data-stats.md](data-stats.md) gives the base rates to put in the prompt (anxiety 32% and relaxed 17% of val points; 37% of profiles completely empty) and the gold reply length to target.
-- **Ismail M. (training):** the token-length table decides the max sequence length (we use 3,500 tokens of history).
-- **Elly (inference):** the same table says how many test histories will need truncating at inference.
+Later tasks Z1–Z4 (inference truncation, stats script, format doc update, augmentation research) were closed on Oct 12 without delivery. Z1 turned out not to be needed: submission #2 ran on the real test set without errors. Reasons for each in TASKS.md.
 
 ---
 
@@ -39,82 +33,62 @@ Elly ──image + latency──► Ismail F. (submissions)
 | Delivered | File | Status |
 |---|---|---|
 | Strict format checker (fails closed) | [`scripts/validate.py`](../scripts/validate.py) | done (B3) |
-| Scorer: emotion accuracy + macro-F1 + per-class table + confusions, profile micro/macro-F1 + exact match, baselines, reply length | [`scripts/eval.py`](../scripts/eval.py) | done (B4) |
-| Test suite (attacks the validator, checks the scorer's maths) | [`tests/run_tests.py`](../tests/run_tests.py) | done: 64/64 |
-| Design + how to read the output | [`docs/eval-design.md`](eval-design.md), [`docs/interpreting-eval-output.md`](interpreting-eval-output.md) | done |
-| Character-level BLEU-4, ROUGE-L, BERTScore in `eval.py` (the 20 reply-quality points) | next version of `eval.py` | in review: BLEU/ROUGE verified against sacrebleu; 2 BERTScore fixes pending (layer 8, exclude [CLS]/[SEP]) |
+| Scorer: emotion accuracy, macro-F1, per-class table, confusions, profile micro/macro-F1 + exact match, baselines, reply length, char-level BLEU-4 / ROUGE-L, BERTScore | [`scripts/eval.py`](../scripts/eval.py) | done (B4, I4) |
+| Test suite for validate + eval | [`tests/run_tests.py`](../tests/run_tests.py) | done: 73/73 |
+| Design notes and how to read the output | [`docs/eval-design.md`](eval-design.md), [`docs/interpreting-eval-output.md`](interpreting-eval-output.md) | done |
+| Error-analysis tool, v2.2 and v3 ("Error Genome"), the base of the current v4.1 | [`scripts/analyze.py`](../scripts/analyze.py), [`tests/test_analyze.py`](../tests/test_analyze.py) | done; v4.1 = v3 + review fixes, 102/102 tests |
+| Pre-flight gate for pilot runs, with 10 tests | `pilot_gate.py` (Oct 9, not merged) | reviewed Oct 10: needs fixes before use (one submission per slice, fail when a check can't run, validity check) |
+| Research report on class imbalance (Oct 9) | — | reviewed and corrected against our data: [`docs/p2-imbalance-plan.md`](p2-imbalance-plan.md) |
 
-**How it helps you**
-- **Everyone:** run `validate.py` before believing any result, and `eval.py` to compare anything. No "it looks better" decisions.
-- **Ismail F.:** the confusion pairs in `eval.py`'s output (fear→anxiety, relaxed↔gratitude, helplessness→sadness) are exactly what B5 targets.
-- **Ismail M.:** a fine-tuned model only "wins" when `eval.py` on val beats the untuned one.
-- **Elly:** run `validate.py` on the Migu output before any submission. It catches the format errors that would score 0.
+Every score in this repo comes from Yahya's `eval.py`.
 
 ---
 
-## Ismail F.: captain, training lead (QLoRA), Migu & infrastructure, classification & prompt
+## Ismail F.: captain, training lead, Migu infrastructure, prompt
 
-| Delivered | File | Status |
+| Delivered | Where | Status |
 |---|---|---|
-| Official baseline run, exact commands (did Elly's B1) | [`experiments/exp001-*`](../experiments/exp001-baseline-qwen0.5b-cpu/README.md) | done |
-| Qwen2.5-7B via API | [`experiments/exp002-*`](../experiments/exp002-qwen7b-api/README.md) | done |
-| API experiment runner: official prompt/parser + validate + eval in one command | [`scripts/exp3_compare.py`](../scripts/exp3_compare.py) | done |
-| Windows setup for API runs | [`scripts/setup-api-env.ps1`](../scripts/setup-api-env.ps1) | done |
-| Qwen3-14B thinking vs non-thinking, 50 pts | [`experiments/exp003-*`](../experiments/exp003-qwen3-14b-thinking/README.md) | done |
-| Qwen3-14B vs 8B, 50 pts → **decision: 8B non-thinking** | [`experiments/exp004-*`](../experiments/exp004-model-size/README.md) | done |
-| Training-data builder (imports the inference prompt) | [`train/build_sft.py`](../train/build_sft.py) | done (I1) |
-| Technical plan, organiser questions | [`docs/technical-plan.md`](technical-plan.md), [`docs/organiser-answers.md`](organiser-answers.md) | maintained |
-| Better prompt (emotion first, label definitions, strict profile, reply length) | EXP-005 to EXP-016 → V1.8 | done (B5) |
-| Migu setup, val50 run, private image, **submission #1** (did Elly's B7 while she was out) | `participant/`, LOG.md | done (B7, B9) |
-| Teacher test: DeepSeek V4.1-Flash as P2 data tool | `experiments/exp017-teacher/` | done (EXP-017) |
-| **SFT data rebuild** with the frozen V1.8 prompt + `check_sft.py` sign-off (17,745 → 14,942 train after the 350-char filter) | [`train/build_sft.py`](../train/build_sft.py), [`train/check_sft.py`](../train/check_sft.py) | done (T1, Oct 6–7) |
-| **Migu training environment**: venv `/opt/train_venv` on `conda_env`, smoke test, `qwen3` + `enable_thinking: false` template fix, `torchrun` shim | `/mnt/storage/configs`, TASKS T2 | done (T2, Oct 7) |
-| **vLLM eval harness on Migu** (start.sh + validate + eval, model override by env) | TASKS T3 | done (T3, Oct 7) |
-| **V1.8 baseline on Migu vLLM** = the bar for fine-tuning (acc 0.54 / 0.62) | TASKS T4, LOG.md | done (T4, Oct 7) |
-| **Pilot QLoRA** (2k ex) + **first 2-GPU DDP run** | `configs/pilot_ddp.yaml`, TASKS T5 / E1 | done (T5, E1, Oct 8) |
-| **Pilot gate**: acc 0.68 / 0.78, ROUGE-L 0.237 / 0.259 | TASKS T6, LOG.md | done (T6, Oct 8) |
-| **Full QLoRA run + merge** (14,942 ex, 1 h 48 min): **acc 0.80 / 0.86, ROUGE-L 0.269 / 0.293** = submission #2 candidate | `configs/full.yaml`, `/root/merged/full`, TASKS T7, LOG.md | done (T7, Oct 8) |
-
-**How it helps you**
-- **Ismail M.:** the base model is decided (Qwen3-8B, non-thinking), and `build_sft.py` gives you training data in LLaMA-Factory format that matches inference byte for byte.
-- **Elly:** `exp3_compare.py` results are the target. Your Migu run of the same 50 points should give similar scores. If not, something differs between API and vLLM.
-- **Everyone:** `exp3_compare.py` lets anyone test an idea for cents without touching the GPU budget.
+| Base model and mode: official baseline, Qwen2.5-7B, Qwen3-14B thinking vs not, 8B vs 14B → **Qwen3-8B non-thinking** | EXP-001 to EXP-004 | done |
+| API experiment runner (official prompt/parser + validate + eval in one command) and Windows setup | [`scripts/exp3_compare.py`](../scripts/exp3_compare.py), [`scripts/setup-api-env.ps1`](../scripts/setup-api-env.ps1) | done |
+| Prompt work → **V1.8, frozen** | EXP-005, EXP-010 to EXP-016 | done (B5) |
+| Migu setup, official vLLM image, **submission #1** | `participant/`, LOG.md | done (B7, B9) |
+| Teacher test: DeepSeek V4.1-Flash | EXP-017 | done |
+| SFT data rebuild with the frozen prompt + `check_sft.py` sign-off | [`train/build_sft.py`](../train/build_sft.py), [`train/check_sft.py`](../train/check_sft.py) | done (T1) |
+| Migu training environment, eval harness, V1.8 baseline on vLLM | TASKS T2–T4 | done |
+| Pilot QLoRA, first 2-GPU DDP run, pilot gate | TASKS T5, T6, E1 | done |
+| **Full QLoRA run + merge**: emotion 0.54 → 0.80 / 0.62 → 0.84 | [EXP-019](../experiments/exp019-qlora-full/README.md) | done (T7) |
+| Submission check (the exact organiser run path) → **submission #2** | TASKS T9, T10 | done (Oct 9) |
+| Error review of all 17 remaining emotion errors → no second training run | [`docs/p1-error-review.md`](p1-error-review.md), [`docs/p2-imbalance-plan.md`](p2-imbalance-plan.md) | done (P1) |
+| FP8 latency test | [EXP-020](../experiments/exp020-fp8/README.md) | done |
+| Card-hour ledger, expert-review docs (README, integrity note, experiment index) | LOG.md, [`docs/integrity.md`](integrity.md), [`experiments/README.md`](../experiments/README.md) | done (Oct 12) |
 
 ---
 
-## Ismail M.: training support (P2)
+## Ismail M.: prompts and training support
 
-| Delivered | File | Status |
+| Delivered | Where | Status |
 |---|---|---|
-| Base model choice | [technical-plan.md §2](technical-plan.md) | done: Qwen3-8B non-thinking (B8) |
-| API setup on his laptop | `scripts/setup-api-env.ps1` | done |
-| LoRA config, SFT data rebuild, smoke test, training runs | Migu | done by Ismail F. (T1–T7) |
+| Base-model check: thinking mode on 8B | EXP-006 | done (invalid run → thinking stays off) |
+| Four prompt variants; the profile-rule prompt is the origin of V1.8's "leave [] if insufficient information" rules | EXP-007, EXP-008, EXP-009, EXP-014 (V1.6) | done |
+| Contribution to the T1 `build_sft.py` rebuild | `train/build_sft.py` | done (T1, with Ismail F.) |
 
-**What he needs from others:** the SFT data from `build_sft.py` (ready), the final prompt from B5 (rebuild the data when it changes), and `eval.py` to judge each checkpoint.
-**What others need from him:** merged bf16 weights that load offline in `participant/model`. Agree the format with Elly.
+The second training run (P2) he owned was dropped on Oct 11 after the error review.
 
 ---
 
-## Elly: infrastructure support (joins Oct 8; the Migu setup and all training runs were built by Ismail F.)
+## Elly: infrastructure support (joined Oct 8)
 
-| Delivered | File | Status |
-|---|---|---|
-| Migu instance + official image running Qwen3-8B on vLLM, latency measured | `docs/submission-howto.md` (to write) | todo (B7) |
-| vLLM backend, truncation at inference (same rule as `build_sft.py`), `sorted(EMOTIONS)` patch | `participant/` | todo (I5) |
-
-**What she needs from others:** the patched `participant/run_inference.py` (sorted emotions, now in git), `validate.py`/`eval.py` to check the Migu output, the 50 val points, and later Ismail M.'s weights.
-**What others need from her:** proof the pipeline runs in the official image, the real latency on 2×4090, and the step-by-step submission process. **Nobody can submit until B7 is done.**
+Owned E1–E5, the T9 check and organiser questions O1b. E1 (2-GPU DDP) was completed by Ismail F.'s pilot rerun on Oct 8; T9, the card-hour ledger, the latency test and the organiser questions were done by Ismail F. by Oct 12, and the remaining rows were closed (see TASKS.md).
 
 ---
 
-## Where everything stands
+## Where everything stands (Oct 12)
 
-| Area | Done | Next |
-|---|---|---|
-| Data | val files, stats, formats, SFT data | 200-point val file for confirming B5 |
-| Evaluation | validate, eval, 64 tests | BLEU/ROUGE/BERTScore merged (I4) |
-| Model choice | Qwen3-8B non-thinking | — |
-| Prompt | baseline measured | B5: V0–V3 on 50 pts, winner on 200 |
-| Training | T1–T7 by Ismail F. (data rebuild, env, pilot, full run, merges): full model acc 0.80 / 0.86 | T9 submission check, P2 only if P1 finds a clear fix |
-| Infrastructure | B7 done by Ismail F.; 2-GPU DDP works (Oct 8) | Elly back Oct 8: card-hour ledger, images, latency, T9 |
-| Submissions | 1 of 5 used (V0, Oct 4) | #2 = T7 full model after T9 |
+| Area | State |
+|---|---|
+| Data | Official train only; val used only for evaluation; fixed slices n50 / n50b / n100 tracked in git |
+| Evaluation | validate + eval (73 tests), analyze v4.1 (102 tests) |
+| Model | Qwen3-8B non-thinking + full QLoRA, merged bf16 |
+| Prompt | V1.8, frozen, shared by training and inference |
+| Submissions | 2 of 5 used. **#2 (Oct 9) = the full QLoRA model.** FP8 variant tested (EXP-020), submitted only if the latency formula makes it worth the quality loss |
+| Compute | 4.95 of 30 card-hours left (Oct 12) |
