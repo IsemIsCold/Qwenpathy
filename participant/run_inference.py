@@ -131,6 +131,11 @@ def load_config() -> dict[str, Any]:
             raise ValueError("api_options 必须为 JSON object")
     if not isinstance(config["performance_rounds"], int) or config["performance_rounds"] <= 0:
         raise ValueError("performance_rounds 必须为正整数")
+    max_user_tokens = config.get("max_user_tokens")
+    if max_user_tokens is not None and (
+        not isinstance(max_user_tokens, int) or isinstance(max_user_tokens, bool) or max_user_tokens <= 0
+    ):
+        raise ValueError("max_user_tokens 必须为正整数或省略")
     return config
 
 
@@ -238,6 +243,45 @@ def conversation_text(sample: dict[str, Any]) -> str:
             raise ValueError(f"样本 {sample['id']} 的 history 格式无效")
         rendered.append(f"{turn['role']}: {turn['content']}")
     return "样本 ID: " + sample["id"] + "\n对话历史:\n" + "\n".join(rendered)
+
+
+def fit_history(sample: dict[str, Any], count_tokens, max_tokens: int) -> tuple[dict[str, Any], int]:
+    """Drop the oldest turns until conversation_text() fits in max_tokens (Z1).
+
+    Same rule as train/build_sft.py fit_history(), so inference sees the same input
+    shape as training: never start on an assistant turn, always keep the last turn.
+    Returns (new sample, number of turns dropped). The input sample is not modified.
+    """
+    history = sample["history"]
+    dropped = 0
+    while True:
+        candidate = {**sample, "history": history}
+        if len(history) == 1 or count_tokens(conversation_text(candidate)) <= max_tokens:
+            return candidate, dropped
+        cut = 1
+        while cut < len(history) - 1 and history[cut]["role"] == "assistant":
+            cut += 1  # never start the window on an assistant turn
+        history = history[cut:]
+        dropped += cut
+
+
+def history_token_counter(config: dict[str, Any], tokenizer: Any = None):
+    """Token counter for fit_history(): len(encode(text, add_special_tokens=False)),
+    exactly like TokenCounter.count() in train/build_sft.py. Loaded once at start-up."""
+    if tokenizer is None:
+        try:
+            from transformers import AutoTokenizer
+        except ImportError as exc:
+            raise RuntimeError("max_user_tokens 需要 transformers 来加载分词器") from exc
+        source = os.environ.get("VLLM_MODEL_DIR") or config.get("model_path")
+        if not source:
+            raise ValueError("max_user_tokens 需要模型目录: 设置 VLLM_MODEL_DIR 或配置 model_path")
+        path = Path(source)
+        path = path if path.is_absolute() else ROOT / path
+        if not path.exists():
+            raise FileNotFoundError(f"分词器目录不存在: {path}")
+        tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True)
+    return lambda text: len(tokenizer.encode(text, add_special_tokens=False))
 
 
 def extract_object(text: str) -> dict[str, Any]:
@@ -445,6 +489,13 @@ def main() -> None:
             "base_url": config["base_url"],
         }
 
+    # Z1: optional history truncation (config key max_user_tokens; absent = unchanged behaviour)
+    max_user_tokens = config.get("max_user_tokens")
+    count_tokens = None
+    truncated_samples = dropped_turns = 0
+    if max_user_tokens:
+        count_tokens = history_token_counter(config, tokenizer if backend == "transformers" else None)
+
     samples = read_jsonl(test_file)
     submission_path = result_dir / "submission.jsonl"
     submission_path.write_text("", encoding="utf-8")
@@ -461,7 +512,16 @@ def main() -> None:
     )
 
     for index, sample in enumerate(samples, 1):
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": conversation_text(sample)}]
+        truncation_ms = 0.0
+        model_input = sample
+        if count_tokens is not None:
+            truncation_started = time.perf_counter()
+            model_input, dropped = fit_history(sample, count_tokens, max_user_tokens)
+            truncation_ms = (time.perf_counter() - truncation_started) * 1000
+            if dropped:
+                truncated_samples += 1
+                dropped_turns += dropped
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": conversation_text(model_input)}]
         if backend == "transformers":
             prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
             synchronize(torch)
@@ -481,7 +541,7 @@ def main() -> None:
             parse_failure_ids.append(sample["id"])
         if backend == "transformers":
             synchronize(torch)
-        elapsed_ms = (time.perf_counter() - started) * 1000
+        elapsed_ms = (time.perf_counter() - started) * 1000 + truncation_ms
         if index <= config["performance_rounds"]:
             latencies.append(elapsed_ms)
         predictions.append(prediction)
@@ -508,6 +568,12 @@ def main() -> None:
         "parse_failure_count": len(parse_failure_ids),
         "parse_failure_ids": parse_failure_ids,
     }
+    if count_tokens is not None:
+        report["truncation"] = {
+            "max_user_tokens": max_user_tokens,
+            "truncated_samples": truncated_samples,
+            "dropped_turns": dropped_turns,
+        }
     (result_dir / "performance_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"PASS: {submission_path}")
     print(f"PASS: {result_dir / 'performance_report.json'}")
