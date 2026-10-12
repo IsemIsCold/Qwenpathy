@@ -5,6 +5,7 @@ Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own ro
 
 ## Where we are (Oct 12)
 
+- **Oct 12 (late): EXP-022 ready, no GPU used.** Organisers say generated training data is allowed (answer #11), but P2 stays parked: rare classes are 4.3% of val and a run would use all the card-hours left. First, the no-training levers: an anxiety-prior correction from label logprobs (b tuned on a new 500-point slice `tune500`) + the tag filter off + FP8 vs bf16, all from **one 2-GPU session** (`scripts/exp022_session.sh`, ~0.8 card-hours). Scripts tested on a stub server. **Oct 13: run it, then pick submission #3.**
 - **Oct 12: team tasks closed out; Ismail F. finishes the rest himself** (FP8 test, card-hour ledger, expert-review package F3). Open E/Z/O rows are marked dropped or reassigned with the reason.
 - **Oct 12: EXP-020 FP8 tested** (organisers allow quantisation). Latency **1.55 → 1.16 s** (−25%), but n50 accuracy 0.80 → 0.76 and profile micro-F1 ≈ −0.05 on both slices: a certain cost of ≈1.3 points vs an unknown latency gain. **Submission #2 stays unless the latency formula makes FP8 worth it** (asked the organisers). FP8 = `participant/start_fp8.sh` on Migu, ready.
 
@@ -123,7 +124,7 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 
 | # | Task | Owner | Status |
 |---|---|---|---|
-| O1 | **Oct 12, closed by Ismail F.: answered: quantised models are allowed. Generated data and profile metric still unanswered.** Ask the organisers (WeChat group): profile metric (F1 vs exact match), are quantised models allowed, memory bank at test time? **+ (Oct 8, decides P2/Z4) may we train on LLM-generated/rewritten data and on public Chinese emotional-dialogue datasets?** | Ismail F. | doing |
+| O1 | **Oct 12, closed by Ismail F.: answered: quantised models are allowed; generated training data is allowed (answer #11). Profile metric still unanswered.** Ask the organisers (WeChat group): profile metric (F1 vs exact match), are quantised models allowed, memory bank at test time? **+ (Oct 8, decides P2/Z4) may we train on LLM-generated/rewritten data and on public Chinese emotional-dialogue datasets?** | Ismail F. | doing |
 | O1b | **Oct 12, closed by Ismail F.: Ismail F. asks the latency formula himself (decides EXP-020 / P5).** Ask the organisers: submission mechanism / eval hardware, how card-hours are counted, latency formula. Captain posts in the official group. | Elly | reassigned |
 | O2 | **Oct 12, closed by Ismail F.: not needed before the freeze.** `analyze.py` follow-ups: `--force` passthrough for submissions with blank labels; drop "increase temperature" advice (line 402) | Yahya | dropped |
 | O3 | **Oct 12, closed by Ismail F.: the F3 experiment-trail audit marks EXP-006–009 as 'results only, prompt text not archived'.** EXP-006/007/008/009: push the full prompt text + run folders into `experiments/` | Ismail M. | reassigned |

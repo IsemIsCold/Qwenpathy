@@ -184,6 +184,7 @@ mixed, sadness, loneliness, anxiety, anger, fear, disgust, shame, helplessness
 | `data/val_input_n50.jsonl`, `data/val_gold_n50.jsonl` | **yes** | `python scripts/convert_val.py --in data/val_public.jsonl --out data/val_input_n50.jsonl --gold data/val_gold_n50.jsonl --n 50` |
 | `data/val_input_n50b.jsonl`, `data/val_gold_n50b.jsonl` | **yes** | `python scripts/convert_val.py --in data/val_public.jsonl --out data/val_input_n50b.jsonl --gold data/val_gold_n50b.jsonl --exclude data/val_gold_n50.jsonl --sample 50 --seed 42` |
 | `data/val_input_n100.jsonl`, `data/val_gold_n100.jsonl` | **yes** | n50 followed by n50b (concatenate the two files in that order) |
+| `data/val_input_tune500.jsonl`, `data/val_gold_tune500.jsonl` | **yes** | `python scripts/convert_val.py --in data/val_public.jsonl --out data/val_input_tune500.jsonl --gold data/val_gold_tune500.jsonl --exclude data/val_gold_n100.jsonl --sample 500 --seed 7` (EXP-022: picks the emotion bias; no point shared with n100) |
 | `data/val_input_long5.jsonl` | no | `python scripts/make_long5.py` (the 5 longest val points outside n50/n50b) |
 | `data/sft/*` | no | `python train/build_sft.py --train data/train_public.jsonl --inference participant/run_inference.py --out-dir data/sft --tokenizer models/qwen3-8b-tok`, then `python train/check_sft.py --tokenizer models/qwen3-8b-tok --cutoff-len 6144` |
 | `docs/data-stats.md` | yes | `python scripts/compute_stats.py` (never edit by hand) |

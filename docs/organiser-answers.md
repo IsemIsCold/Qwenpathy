@@ -27,4 +27,8 @@ Sent on **2026-09-25** in the official tech-track WeChat group. Fill in the answ
 | 9 | vLLM 服务的启动时间是否不计入时延？(*vLLM fúwù de qǐdòng shíjiān shìfǒu bù jìrù shíyán?*) "Is vLLM start-up time excluded?" | 不计入 (*bù jìrù*): **excluded.** | 2026-10-12 |
 | 10 | When the AIQ balance runs out, is the private image deleted? Must the image be kept after submitting? | The account goes overdue; about 7 days later instances, images and storage are deleted. **A copy of the image is archived when an evaluation is submitted successfully**, so the private image can be deleted after that. AIQ can be recharged (Fee Center → Recharge). | 2026-10-12 |
 
-Still open: profile metric (F1 vs exact match), generated training data, BLEU tokenisation.
+| 11 | May we train on LLM-generated or rewritten data? | **Yes**, generated data may be used for training. | 2026-10-12 |
+
+Still open: profile metric (F1 vs exact match), BLEU tokenisation, public external datasets (not asked separately).
+
+What #11 changes: P2 option B (rare-class generated data, `docs/p2-imbalance-plan.md`) is allowed again. It is **not** started: the rare classes are 4.3% of val points (EXP-018 §3), the run would cost ~4.5 card-hours (all that is left), and EXP-022 (no training) is tested first. If generated data is ever used, `docs/integrity.md` must list it.

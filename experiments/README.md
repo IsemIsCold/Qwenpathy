@@ -32,5 +32,6 @@ One folder per experiment, each with a README (goal, setup, results, decision). 
 | EXP-019 | [exp019-qlora-full](exp019-qlora-full/README.md) | QLoRA fine-tune: pilot (T5/T6) and full run (T7), plus the submission check (T9) | Emotion 0.54 → 0.80 / 0.62 → 0.84 → **submission #2** |
 | EXP-020 | [exp020-fp8](exp020-fp8/README.md) | FP8 weights at inference for latency | 25% faster, but quality gate failed |
 | EXP-021 | [exp021-ngram-spec](exp021-ngram-spec/README.md) | n-gram speculative decoding (lossless) for latency | Same quality, but 23% slower → rejected |
+| EXP-022 | [exp022-emotion-bias](exp022-emotion-bias/README.md) | Anxiety-prior correction from label logprobs + tag filter off (no training) | Scripts ready and tested on a stub; GPU run Oct 13 |
 
 Task-level steps without their own folder (T1 data build, T2 environment, T4 baseline on vLLM, T9 submission check, P1 error review) are logged in [LOG.md](../LOG.md) and [TASKS.md](../TASKS.md). The P1 review is in [docs/p1-error-review.md](../docs/p1-error-review.md).

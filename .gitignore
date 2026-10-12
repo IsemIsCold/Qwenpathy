@@ -13,6 +13,8 @@ data/*
 !data/val_gold_n50b.jsonl
 !data/val_input_n100.jsonl
 !data/val_gold_n100.jsonl
+!data/val_input_tune500.jsonl
+!data/val_gold_tune500.jsonl
 outputs/
 checkpoints/
 train/data/
