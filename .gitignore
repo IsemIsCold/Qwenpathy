@@ -5,7 +5,14 @@ participant/model/
 *.bin
 *.gguf
 *.pt
-data/
+data/*
+# fixed eval slices ARE tracked so everyone scores on identical files
+!data/val_input_n50.jsonl
+!data/val_gold_n50.jsonl
+!data/val_input_n50b.jsonl
+!data/val_gold_n50b.jsonl
+!data/val_input_n100.jsonl
+!data/val_gold_n100.jsonl
 outputs/
 checkpoints/
 train/data/
