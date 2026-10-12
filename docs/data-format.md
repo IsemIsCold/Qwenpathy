@@ -1,8 +1,8 @@
 # Data Format Specification
 
 > **Scope:** This document defines every JSONL format used in the project — raw organiser dumps, test inputs, gold labels, and training pairs.  
-> **Maintainer:** Zakaria (dataset owner)  
-> **Last updated:** 2026-10-04
+> **Maintainer:** Zakaria (dataset owner); §4, §6 and §7 updated by Ismail F.  
+> **Last updated:** 2026-10-12. Every path and field below was checked against the current code (`scripts/convert_val.py`, `train/build_sft.py` `write_outputs()` / `to_sharegpt()`, `train/check_sft.py`) and the files it writes.
 
 ---
 
@@ -62,13 +62,11 @@ Produced by `scripts/convert_val.py`. One JSON object per line. This is **exactl
 
 ```json
 {
-  "id": "train_conv_000001_t9",
-  "conversation_id": "train_conv_000001",
-  "target_user_turn_id": 9,
+  "id": "val_conv_000001_t1",
+  "conversation_id": "val_conv_000001",
+  "target_user_turn_id": 1,
   "history": [
-    {"turn_id": 1, "role": "user", "content": "..."},
-    {"turn_id": 2, "role": "assistant", "content": "..."},
-    ...
+    {"turn_id": 1, "role": "user", "content": "..."}
   ]
 }
 ```
@@ -89,7 +87,7 @@ Produced by `scripts/convert_val.py`. Used by `scripts/eval.py` to score submiss
 
 ```json
 {
-  "id": "train_conv_000001_t9",
+  "id": "val_conv_000001_t1",
   "response_text": "...",
   "emotion_label": "anxiety",
   "user_profile": {
@@ -103,15 +101,54 @@ Produced by `scripts/convert_val.py`. Used by `scripts/eval.py` to score submiss
 
 ---
 
-## 4. SFT training pairs (`train/sft_pairs.jsonl`)
+## 4. SFT training data (`data/sft/`)
 
-Produced by `train/build_sft.py`. Each line is a `{prompt, completion}` pair ready for LLaMA-Factory or direct SFT.
+Produced by `train/build_sft.py` (`write_outputs()`). The system prompt and the user message are built with `SYSTEM_PROMPT` and `conversation_text()` imported from `participant/run_inference.py`, so training sees exactly what inference sends. Defaults: `--max-user-tokens 3500` (oldest turns dropped until the rendered history fits), `--max-reply-chars 350` (longer gold replies skipped), `--dev-ratio 0.05` split by conversation, `--seed 42`.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Same point ID |
-| `prompt` | string | Full prompt text (system prompt + rendered history) |
-| `completion` | string | JSON string of the target output |
+| File | Format |
+|---|---|
+| `train.jsonl`, `dev.jsonl` | `{"id", "messages": [system, user, assistant]}` |
+| `train_sharegpt.json`, `dev_sharegpt.json` | LLaMA-Factory sharegpt: a JSON list of `{"system", "conversations": [{"from": "human"}, {"from": "gpt"}]}` |
+| `train_text.jsonl`, `dev_text.jsonl` | `{"id", "prompt", "completion"}`, rendered with the real Qwen3 chat template. Only written with `--tokenizer` |
+| `dataset_info.json` | LLaMA-Factory registration: `migu_train`, `migu_dev` (by build_sft.py) and `migu_pilot2k` (added by check_sft.py) |
+| `pilot2k_sharegpt.json` | 2,000 training examples (seed 42) for the pilot run, written by `train/check_sft.py` |
+| `build_report.json` | counts, truncation, skipped examples, emotion distribution |
+| `check_report.json` | sign-off by `train/check_sft.py`: val leakage, target validity, prompt identity, exact token lengths |
+
+`train.jsonl` / `dev.jsonl`:
+
+```json
+{"id": "train_conv_000001_t9",
+ "messages": [
+   {"role": "system", "content": "你正在参加数字情感陪伴比赛。…"},
+   {"role": "user", "content": "样本 ID: train_conv_000001_t9\n对话历史:\nuser: …\nassistant: …\nuser: …"},
+   {"role": "assistant", "content": "{\"response_text\": \"…\", \"emotion_label\": \"anxiety\", \"user_profile\": {…}, \"memory_refs\": []}"}
+ ]}
+```
+
+`*_sharegpt.json` (one list element):
+
+```json
+{"system": "你正在参加数字情感陪伴比赛。…",
+ "conversations": [
+   {"from": "human", "value": "样本 ID: train_conv_000003_t9\n对话历史:\nuser: …"},
+   {"from": "gpt", "value": "{\"response_text\": \"…\", …}"}
+ ]}
+```
+
+`*_text.jsonl`: `prompt` ends with `<|im_start|>assistant\n<think>\n\n</think>\n\n` (the empty think block vLLM adds with `enable_thinking=False`); `completion` is the JSON answer.
+
+```json
+{"id": "…", "prompt": "<|im_start|>system\n你正在参加…<|im_end|>\n<|im_start|>user\n…<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n", "completion": "{\"response_text\": …}"}
+```
+
+`dataset_info.json` (one entry):
+
+```json
+"migu_train": {"file_name": "train_sharegpt.json", "formatting": "sharegpt",
+               "columns": {"messages": "conversations", "system": "system"},
+               "tags": {"role_tag": "from", "content_tag": "value", "user_tag": "human", "assistant_tag": "gpt"}}
+```
 
 ---
 
@@ -136,13 +173,27 @@ mixed, sadness, loneliness, anxiety, anger, fear, disgust, shame, helplessness
 
 ---
 
-## 6. File naming conventions
+## 6. Files and how to regenerate them
 
-| File | Purpose | In git? |
-|------|---------|---------|
-| `data/train_public.jsonl` | Official training data | **No** (too large) |
-| `data/val_public.jsonl` | Official validation data | **No** |
-| `data/val_input.jsonl` | Test-format validation inputs | Yes |
-| `data/val_gold.jsonl` | Gold labels for validation | Yes |
-| `data/sft_pairs.jsonl` | SFT training pairs | Yes |
-| `participant/model/` | Model weights | **No** (git-lfs or download) |
+`data/` is gitignored **except the fixed eval slices** (n50, n50b, n100), which are tracked so everyone scores on identical files. Never regenerate the slices; the commands below are for the record (checked Oct 12: they reproduce the tracked slices exactly).
+
+| File | In git? | How to make it |
+|---|---|---|
+| `data/train_public.jsonl`, `data/val_public.jsonl` | no | organiser dataset download |
+| `data/val_input.jsonl`, `data/val_gold.jsonl` | no | `python scripts/convert_val.py --in data/val_public.jsonl --out data/val_input.jsonl --gold data/val_gold.jsonl` |
+| `data/val_input_n50.jsonl`, `data/val_gold_n50.jsonl` | **yes** | `python scripts/convert_val.py --in data/val_public.jsonl --out data/val_input_n50.jsonl --gold data/val_gold_n50.jsonl --n 50` |
+| `data/val_input_n50b.jsonl`, `data/val_gold_n50b.jsonl` | **yes** | `python scripts/convert_val.py --in data/val_public.jsonl --out data/val_input_n50b.jsonl --gold data/val_gold_n50b.jsonl --exclude data/val_gold_n50.jsonl --sample 50 --seed 42` |
+| `data/val_input_n100.jsonl`, `data/val_gold_n100.jsonl` | **yes** | n50 followed by n50b (concatenate the two files in that order) |
+| `data/val_input_long5.jsonl` | no | `python scripts/make_long5.py` (the 5 longest val points outside n50/n50b) |
+| `data/sft/*` | no | `python train/build_sft.py --train data/train_public.jsonl --inference participant/run_inference.py --out-dir data/sft --tokenizer models/qwen3-8b-tok`, then `python train/check_sft.py --tokenizer models/qwen3-8b-tok --cutoff-len 6144` |
+| `docs/data-stats.md` | yes | `python scripts/compute_stats.py` (never edit by hand) |
+| `models/qwen3-8b-tok/` | no | tokenizer files of Qwen3-8B (ModelScope `Qwen/Qwen3-8B`) |
+| `participant/model/` | no | model weights; for the submission, the merged full QLoRA model (see `experiments/exp019-qlora-full`) |
+
+---
+
+## 7. Known data issues
+
+- **Leaked reasoning in gold replies:** 7 train golds and 1 val gold (`val_conv_000331_t17`) contain the data generator's `<think>…</think>` reasoning before the reply. `build_sft.py` skips them (`skipped_think_leak` in `build_report.json`). The val one is in neither n50 nor n50b. Full list of ids: `docs/data-stats.md` §6.
+- **memory_refs:** about 98% of gold points list memory ids, but the test set has no memory bank, so every submission outputs `[]` (as the official baseline does).
+- **Label vocabulary:** gold emotions and profile tags all come from the official lists (0 out-of-vocabulary labels; see `docs/data-stats.md` §2).

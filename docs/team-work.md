@@ -20,11 +20,11 @@ organiser data ──► convert_val.py (Zakaria) ──► fixed val slices n50
 | Delivered | File | Status |
 |---|---|---|
 | Val set → test-format input + gold labels (`--n`, `--exclude`, `--sample`) | [`scripts/convert_val.py`](../scripts/convert_val.py) | done (B2) |
-| Every JSONL format we use | [`docs/data-format.md`](data-format.md) | done (§4/§6 slightly out of date) |
-| Dataset statistics: labels, profiles, lengths | [`scripts/compute_stats.py`](../scripts/compute_stats.py) → [`docs/data-stats.md`](data-stats.md) | done (B6). Numbers checked correct on Oct 8 |
+| Every JSONL format we use | [`docs/data-format.md`](data-format.md) | done; §4, §6, §7 updated Oct 12 (Ismail F.) |
+| Dataset statistics: labels, profiles, lengths | [`scripts/compute_stats.py`](../scripts/compute_stats.py) → [`docs/data-stats.md`](data-stats.md) | done (B6); rewritten Oct 12 with real token counts (Ismail F.) |
 | Training-data rules (split by conversation, history truncation) | spec for `train/build_sft.py` | done (I1) |
 
-Later tasks Z1–Z4 (inference truncation, stats script, format doc update, augmentation research) were closed on Oct 12 without delivery. Z1 turned out not to be needed: submission #2 ran on the real test set without errors. Reasons for each in TASKS.md.
+Later tasks Z1–Z4 were not delivered. Z2 (stats script with real tokens) and Z3 (format doc update) were done by Ismail F. on Oct 12. Z1 (inference truncation) turned out not to be needed, since submission #2 ran on the real test set without errors, and Z4 (augmentation research) became moot with no second training run. Details in TASKS.md.
 
 ---
 
