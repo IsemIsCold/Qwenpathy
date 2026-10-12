@@ -28,7 +28,7 @@ One folder per experiment, each with a README (goal, setup, results, decision). 
 | # | Folder | Question | Outcome |
 |---|---|---|---|
 | EXP-017 | [exp017-teacher](exp017-teacher/README.md) (+ [exp017-switchtest](exp017-switchtest/README.md)) | Could a stronger API model (DeepSeek) be a data tool? | V4.1-Flash works; **not used** for training |
-| EXP-018 | — | Reserved for the data-augmentation research (Z4) | **Not run**: no second training run (see [docs/p2-imbalance-plan.md](../docs/p2-imbalance-plan.md)) |
+| EXP-018 | [exp018-data-research](exp018-data-research/README.md) | Data research for a second training run (Z4): reply length, the 350-char filter, augmentation | No training lever ≥ 1 point; found the profile tag filter deleting tags the model was trained to output |
 | EXP-019 | [exp019-qlora-full](exp019-qlora-full/README.md) | QLoRA fine-tune: pilot (T5/T6) and full run (T7), plus the submission check (T9) | Emotion 0.54 → 0.80 / 0.62 → 0.84 → **submission #2** |
 | EXP-020 | [exp020-fp8](exp020-fp8/README.md) | FP8 weights at inference for latency | 25% faster, but quality gate failed |
 | EXP-021 | [exp021-ngram-spec](exp021-ngram-spec/README.md) | n-gram speculative decoding (lossless) for latency | Same quality, but 23% slower → rejected |
