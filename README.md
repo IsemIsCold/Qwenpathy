@@ -29,24 +29,35 @@ For each test sample we get a Chinese conversation that ends on a user message. 
 
 The organisers run `bash /root/participant/start.sh TEST_FILE RESULT_DIR` **offline** (no internet, no APIs) on what is probably 2× RTX 4090. We get **5 successful submissions; the last successful one counts.**
 
-## Current approach (Oct 8)
+## Current approach (Oct 12)
 
-**Qwen3-8B, non-thinking mode, QLoRA fine-tuned on the full training set**, served by vLLM on 2× 4090. Built and run end to end on Migu by Ismail F. (T1–T7 in [TASKS.md](TASKS.md)).
+**Qwen3-8B, non-thinking mode, QLoRA fine-tuned on the full training set**, merged into bf16 weights and served by vLLM on 2× 4090. Built and run end to end on Migu by Ismail F. (T1–T10 in [TASKS.md](TASKS.md)).
 
-- **Prompt: V1.8, frozen** (`participant_v1_8/`): the official prompt + "leave [] if insufficient information" profile rules + a filter for over-predicted profile tags + a map for invented emotion labels. Chosen over 16 experiments and confirmed on an untouched val slice: [experiments/exp005-prompt](experiments/exp005-prompt/README.md). Training and inference use exactly this prompt.
-- **Fine-tuning (V2):** LoRA r=16 / α=32 on all linear layers, 4-bit base (QLoRA), 14,942 training examples × 1 epoch, 2-GPU DDP, 1 h 48 min. Merged into bf16 weights for vLLM.
+- **Prompt: V1.8, frozen** (`participant/run_inference.py`): the official prompt + "leave [] if insufficient information" profile rules + a filter for over-predicted profile tags + a map for invented emotion labels. Chosen over 12 prompt experiments and confirmed on an untouched val slice: [experiments/exp005-prompt](experiments/exp005-prompt/README.md). Training and inference use exactly this prompt.
+- **Fine-tuning:** LoRA r=16 / α=32 on all linear layers, 4-bit base (QLoRA), 14,942 training examples × 1 epoch, 2-GPU DDP, 1 h 48 min. Full write-up with loss-curve analysis: [experiments/exp019-qlora-full](experiments/exp019-qlora-full/README.md).
 
-| Val slice | Metric | V1.8 (base model) | Pilot (2k ex) | **Full QLoRA** |
-|---|---|---|---|---|
-| n50 | Emotion accuracy | 0.54 | 0.68 | **0.80** |
-| n50 | ROUGE-L / BLEU-4 | 0.174 / 0.021 | 0.237 / 0.104 | **0.269 / 0.130** |
-| n50 | Profile micro-F1 | 0.352 | 0.410 | **0.489** |
-| n50b | Emotion accuracy | 0.62 | 0.78 | **0.86** |
-| n50b | ROUGE-L / BLEU-4 | 0.197 / 0.068 | 0.259 / 0.133 | **0.293 / 0.151** |
-| n50b | Profile micro-F1 | 0.323 | 0.340 | **0.477** |
-| n50 / n50b | Latency mean | 1.32 / 1.52 s | 1.62 / 1.55 s | 1.66 / 1.50 s |
+All numbers below come from `scripts/eval.py` on two fixed val slices of 50 points each (`data/val_*_n50.jsonl` = first 50 points, `data/val_*_n50b.jsonl` = 50 points sampled once with seed 42 from other conversations). Every model ran through the submission's own `start.sh` on Migu, greedy.
 
-- Submissions: #1 = V0 (Oct 4). **#2 = the full QLoRA model** after the T9 submission check.
+| Val slice | Metric | V1.8 (base model) | Pilot (2k ex) | **Full QLoRA (submitted)** | Full QLoRA, FP8 |
+|---|---|---|---|---|---|
+| n50 | Emotion accuracy | 0.54 | 0.68 | **0.80** | 0.76 |
+| n50 | ROUGE-L / BLEU-4 | 0.174 / 0.021 | 0.237 / 0.104 | **0.267 / 0.130** | 0.258 / 0.126 |
+| n50 | Profile micro-F1 | 0.352 | 0.410 | **0.490** | 0.447 |
+| n50b | Emotion accuracy | 0.62 | 0.78 | **0.84** | 0.84 |
+| n50b | ROUGE-L / BLEU-4 | 0.197 / 0.068 | 0.259 / 0.133 | **0.292 / 0.147** | 0.289 / 0.150 |
+| n50b | Profile micro-F1 | 0.323 | 0.340 | **0.495** | 0.434 |
+| both | Latency mean (n50 / n50b, or all 100) | 1.32 / 1.52 s | 1.62 / 1.55 s | **1.55 s** | 1.16 s |
+
+The "Full QLoRA" column is the T9 submission check (Oct 9); T7 (Oct 8) gave the same numbers within one label. FP8 = the same weights with vLLM `--quantization fp8` ([EXP-020](experiments/exp020-fp8/README.md)): 25% faster, but it loses accuracy and profile quality.
+
+**Submissions** (5 successful runs max, the last one counts; details in [LOG.md](LOG.md)):
+
+| # | Date | What |
+|---|---|---|
+| 1 | Oct 4 | Qwen3-8B base, official prompt (V0) |
+| 2 | Oct 9 | **Full QLoRA model, V1.8 prompt, bf16**: the current entry |
+
+**Where the remaining errors are:** a manual review of all 17 emotion errors on the two slices ([docs/p1-error-review.md](docs/p1-error-review.md)) found about half of them arguable or with a wrong gold label. The real ones sit on messages where the user is worried and then relieved, and on exactly that message type the training labels themselves disagree (anxiety 38% vs relaxed 24%). A second training run aimed at emotion would trade these errors for new ones, so it was not run. Data and reasoning: [docs/p2-imbalance-plan.md](docs/p2-imbalance-plan.md).
 
 Why 8B, non-thinking: [exp004-model-size](experiments/exp004-model-size/README.md), [exp006-think-8b](experiments/exp006-think-8b/README.md), [docs/technical-plan.md](docs/technical-plan.md).
 
@@ -88,8 +99,8 @@ train/
   build_sft.py          train set -> SFT data that matches inference        (Ismail F.; spec: Zakaria)
   check_sft.py          sign-off for the SFT data (leakage, targets, token lengths)   (Ismail F.)
 tests/
-  run_tests.py          tests for validate.py + eval.py                     (Yahya)
-  test_analyze.py       42 tests for analyze.py                             (Yahya)
+  run_tests.py          73 tests for validate.py + eval.py                  (Yahya)
+  test_analyze.py       102 tests for analyze.py v4.1                       (Yahya v3, Ismail F. v4)
 docs/
   how-to.md             how to run everything (start here)
   team-work.md          what each member built, and how it helps the others
@@ -99,12 +110,15 @@ docs/
   eval-design.md        how eval.py is designed                             (Yahya)
   interpreting-eval-output.md   how to read eval.py's numbers               (Yahya)
   organiser-answers.md  questions to the organisers + answers
+  p2-imbalance-plan.md  why there is no second training run (data + reasoning)
+  p1-error-review.md    manual review of the 17 emotion errors
   briefs/               the original one-page task briefs (Oct 1)
 experiments/
   expNNN-name/          one folder per experiment: README + outputs + metrics
 
+In git from data/: only the fixed eval slices (val_*_n50, val_*_n50b, val_*_n100).
 NOT in git (see .gitignore):
-  data/                 contest data and val files: get them from the team drive / Ismail F.
+  data/ (everything else) contest data, full val files, SFT data: get them from the team drive / Ismail F.
   participant/model/    model weights
 ```
 
