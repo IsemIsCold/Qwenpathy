@@ -116,6 +116,8 @@ def build_config(base_cfg, args, spec):
         "hardware_label": f"api:{urlparse(args.base_url).hostname}",
         "api_options": {} if (args.soft_switch or args.no_switch) else {"enable_thinking": spec["enable_thinking"]},
     })
+    if args.api_options:  # provider-specific switch, e.g. DeepSeek: {"thinking": {"type": "disabled"}}
+        cfg["api_options"] = json.loads(args.api_options)
     generation = {"max_new_tokens": spec["max_new_tokens"], "seed": args.seed}
     if args.greedy:
         generation["do_sample"] = False  # official script turns this into temperature 0
@@ -283,7 +285,9 @@ def score_run(res_dir, input_file, gold_file, scripts, wall_seconds):
 def write_report(results, args, input_file, out):
     modes = list(results)
     decoding = "greedy (temperature 0)" if args.greedy else "Qwen recommended sampling per mode"
-    if args.no_switch:
+    if args.api_options:
+        switch = f"api_options {args.api_options}"
+    elif args.no_switch:
         switch = "none (model without thinking mode)"
     elif args.soft_switch:
         switch = "/think, /no_think tags"
@@ -333,7 +337,17 @@ def parse_args():
     ap.add_argument("--no-switch", action="store_true",
                     help="send no thinking switch at all, for models without a thinking mode "
                          "(e.g. Qwen2.5); only valid with --modes nothink")
+    ap.add_argument("--api-options", help="JSON merged into every request body instead of enable_thinking, "
+                    "e.g. DeepSeek non-thinking: '{\"thinking\": {\"type\": \"disabled\"}}'; only with --modes nothink")
     args = ap.parse_args()
+    if args.api_options:
+        try:
+            if not isinstance(json.loads(args.api_options), dict):
+                raise ValueError
+        except ValueError:
+            ap.error("--api-options must be a JSON object")
+        if "think" in args.modes:
+            ap.error("--api-options only works with --modes nothink")
     if args.no_switch and (args.soft_switch or "think" in args.modes):
         ap.error("--no-switch can't be combined with --soft-switch or the 'think' mode")
     return args

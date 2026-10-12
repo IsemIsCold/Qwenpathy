@@ -17,7 +17,7 @@
 
 ## Compute
 
-**Migu: 30 card-hours total (voucher).** A 2-GPU instance probably costs 2 card-hours per hour.
+**Migu: 30 card-hours total (voucher).** A 2-GPU instance costs 2 card-hours per hour, and **a no-GPU boot costs 1 card-hour per hour** (confirmed from the billing page, Oct 12). Private images are billed separately in AIQ (≈ 1 AIQ per GB per day; our 74.9 GB image = 75 AIQ/day; balance 571 AIQ on Oct 12).
 
 | Date | Who | Job | Estimated | Actual | Remaining |
 |---|---|---|---|---|---|
@@ -27,7 +27,8 @@
 | 2026-10-08 | Ismail F. | T5 pilot rerun on 2 GPUs (DDP) + merge; GPUs detached after ~30 min idle, so the T6 eval did not run | ~0.6 | fill in from Migu page | |
 | 2026-10-08 | Ismail F. | T7 full run (2 GPUs, 1 h 48 min) + merge; GPUs dead for ~30 min after training before shutdown; eval on a fresh boot | ~4.2 | fill in from Migu page | |
 | 2026-10-09 | Ismail F. | T9 submission check: one 2-GPU boot, plain `start.sh` on 100 val points (one vLLM start-up); model swap, eval, validate and image save done on no-GPU boots | ~0.5 | fill in from Migu page | |
-| 2026-10-12 | Ismail F. | EXP-020 FP8 test: one 2-GPU boot, `start_fp8.sh` on t9_input (100 points, one vLLM start-up); eval on a no-GPU boot | ~0.5 | fill in from Migu page | |
+| 2026-10-12 | Ismail F. | EXP-020 FP8 test: no-GPU prep (0.02) + one 2-GPU boot, `start_fp8.sh` on t9_input (0.12 h × 2 cards = 0.25) + no-GPU eval (0.18) | ~0.5 | **0.45** | **4.95** |
+| **Reconciliation (Oct 12, Migu page)** | Ismail F. | Balance after Oct 4: 28.67. Balance now: **4.95**. So Oct 7–12 used **23.72** card-hours (Oct 7–11: 23.27), against ≈ 7 estimated. Main cause: **no-GPU mode (无卡模式, wú kǎ móshì) is billed at 1 card per hour**, and no-GPU sessions ran for hours (Oct 9 alone: 1.84 no-GPU vs 0.20 for the T9 GPU run). Visible GPU rows: Oct 8 0.38 + 1.02, Oct 9 0.20, Oct 12 0.25. | | 23.72 | 4.95 |
 
 **AutoDL:** not used (decision Oct 5): all training and evals run on Migu.
 

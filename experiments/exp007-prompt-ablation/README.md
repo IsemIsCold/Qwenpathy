@@ -9,7 +9,7 @@
 
 ## Setup
 
-`Qwen/Qwen3-8B:nscale`, HF router, `--modes nothink`, n50. Prompt: "modified prompt variant", English, starting "You are an emotional-companion assistant. Output ONLY a single JSON object…" with the emotion list including `""`. **TODO (Ismail M.): push the full prompt text + run folder.** Greedy or sampled: not stated.
+`Qwen/Qwen3-8B:nscale`, HF router, `--modes nothink`, n50. Prompt: "modified prompt variant", English, starting "You are an emotional-companion assistant. Output ONLY a single JSON object…" with the emotion list including `""`. Greedy or sampled: not stated.
 
 ## Results (n50)
 
@@ -28,3 +28,5 @@ Top confusions: gratitude→relaxed ×3, fear→anxiety ×3, relaxed→sadness �
 ## Conclusion
 
 Emotion −1 sample vs V0 (noise). Profile exact match up because it leaves more fields empty, but micro-F1 down. Superseded by V1.7/V1.8, which keeps V0's emotion and gets micro-F1 0.373 / exact 0.32 on n50.
+
+**Archive note (Oct 12):** this run was done on Ismail M.'s machine and the exact prompt text and run folder were never pushed. The results above are recorded from his report; they did not feed into any adopted version, so the gap doesn't affect any decision.

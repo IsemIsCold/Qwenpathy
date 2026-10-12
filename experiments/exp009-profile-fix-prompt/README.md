@@ -17,7 +17,7 @@ Prompt (from `Run inference.docx`, reviewed Oct 5): English, replaces the whole 
 - length rule: "around 200 Chinese characters… Do NOT make it shorter than 180"
 - `response_text` first in the JSON; `{{ }}` correctly escaped; `SYSTEM_PROMPT = SYSTEM_PROMPT = """` (harmless double assignment)
 
-**TODO (Ismail M.): push the run folder (submission, metrics, raw outputs).**
+
 
 ## Results (n50)
 
@@ -42,3 +42,5 @@ Top confusions: fear→anxiety ×3, relaxed→sadness ×2, helplessness→sadnes
 - Profile clearly better (micro-F1 +5, exact +19 points) — the first sign that explicit profile rules help.
 - The length rule makes replies longer (closer to gold) but costs latency, and EXP-011/012 later showed a length instruction lowers emotion accuracy → dropped.
 - Follow-ups: EXP-010 (V1.3 = V0 + these profile + length rules) and EXP-014 (V1.6, his second prompt). The profile idea survives in **V1.8** in the softer form "Leave [] if insufficient information", plus a tag filter.
+
+**Archive note (Oct 12):** this run was done on Ismail M.'s machine and its run folder (submission, metrics, raw outputs) was never pushed. The prompt is described above from his `Run inference.docx`, and the results are recorded from his report. Its profile idea was re-implemented and re-measured in our own runs (EXP-010, EXP-014, EXP-015), so no adopted decision rests on the missing folder.

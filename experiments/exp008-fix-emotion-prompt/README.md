@@ -9,7 +9,7 @@
 
 ## Setup
 
-`Qwen/Qwen3-8B:nscale`, HF router, `--modes nothink`, n50. Prompt: "emotion-focused modified prompt", English (same opening as EXP-007). **TODO (Ismail M.): push the full prompt text + run folder.** Greedy or sampled: not stated.
+`Qwen/Qwen3-8B:nscale`, HF router, `--modes nothink`, n50. Prompt: "emotion-focused modified prompt", English (same opening as EXP-007). Greedy or sampled: not stated.
 
 ## Results (n50)
 
@@ -30,3 +30,5 @@ Top confusions: **fear→anxiety ×5, anger→anxiety ×3, relaxed→anxiety ×2
 - Emotion +1 sample vs V0 (inside the ±7-point noise), reached by pushing labels toward anxiety: macro-F1 drops to the lowest of all variants. Same failure mode as V1's base-rate line.
 - Profile micro-F1 0.000 and exact 0.373 = **every profile is empty** (0.373 is exactly the all-empty baseline on n50). This is the cleanest real-run evidence for the open question: if the official profile metric is exact match, empty profiles (0.373) beat V1.7/V1.8 (0.320 on n50); if F1, V1.8 (0.373 micro-F1) wins by a mile.
 - Not adopted: V1.8 stays the prompt. Emotion gains have to come from fine-tuning (V2).
+
+**Archive note (Oct 12):** this run was done on Ismail M.'s machine and the exact prompt text and run folder were never pushed. The results above are recorded from his report; they did not feed into any adopted version, so the gap doesn't affect any decision.
