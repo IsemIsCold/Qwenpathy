@@ -145,6 +145,9 @@ def load_config() -> dict[str, Any]:
     top = config.get("emotion_bias_top_logprobs", 5)
     if not isinstance(top, int) or isinstance(top, bool) or not 1 <= top <= 20:
         raise ValueError("emotion_bias_top_logprobs 必须为 1 到 20 之间的整数")
+    classifier_dir = config.get("profile_classifier")
+    if classifier_dir is not None and (not isinstance(classifier_dir, str) or not classifier_dir):
+        raise ValueError("profile_classifier 必须为目录路径字符串或省略")
     return config
 
 
@@ -447,6 +450,76 @@ def apply_emotion_bias(label: str, scores: dict[str, float], bias: float) -> str
     return best if others[best] > scores["anxiety"] - bias else label
 
 
+class ProfileClassifier:
+    """EXP-024/025: CPU profile-tag classifier blended with the LLM's own tags.
+
+    Char 1-3-gram TF-IDF over the user's messages (+ number of user turns), one logistic
+    regression per tag, trained offline on train_public only (experiments/exp024-cpu-classifier).
+    This is a numpy re-implementation of sklearn's TfidfVectorizer(analyzer="char",
+    sublinear_tf=True) + LogisticRegression.predict_proba, checked equal in
+    tests/test_profile_blend.py. Per field, a tag is kept if
+        a * [the LLM output has it] + (1 - a) * p_classifier >= t
+    with (a, t) from the model file ("blend").
+    """
+
+    WHITESPACE = re.compile(r"\s\s+")
+
+    def __init__(self, directory: Path) -> None:
+        import numpy  # only needed when the classifier is enabled
+
+        self.np = numpy
+        meta = json.loads((directory / "profile_clf.json").read_text(encoding="utf-8"))
+        blocks = []
+        for index, name in enumerate(meta["weight_files"]):  # weights split in files < 30 MB
+            with numpy.load(directory / name) as arrays:
+                if index == 0:
+                    self.idf = arrays["idf"]
+                    self.bias = arrays["bias"]
+                blocks.append(arrays["coef"])
+        self.coef = numpy.vstack(blocks)
+        self.version = meta["version"]
+        self.index = {gram: i for i, gram in enumerate(meta["vocab"])}
+        self.tags = [tuple(tag) for tag in meta["tags"]]
+        self.min_n, self.max_n = meta["ngram_range"]
+        self.max_chars = meta["max_chars"]
+        self.n_user_cap = meta["n_user_cap"]
+        self.blend = {field: (float(a), float(t)) for field, (a, t) in meta["blend"].items()}
+        if set(self.blend) != set(PROFILE_LABELS) or self.coef.shape != (len(self.tags), len(self.index) + 1):
+            raise ValueError("profile_classifier 文件不一致")
+
+    def probabilities(self, sample: dict[str, Any]) -> Any:
+        users = [turn["content"] for turn in sample["history"] if turn.get("role") == "user"]
+        text = self.WHITESPACE.sub(" ", "\n".join(users)[-self.max_chars:].lower())
+        counts: dict[int, int] = {}
+        for n in range(self.min_n, self.max_n + 1):
+            for start in range(len(text) - n + 1):
+                column = self.index.get(text[start:start + n])
+                if column is not None:
+                    counts[column] = counts.get(column, 0) + 1
+        np = self.np
+        columns = np.fromiter(counts.keys(), dtype=np.int64, count=len(counts))
+        values = (np.log(np.fromiter(counts.values(), dtype=np.float64, count=len(counts))) + 1.0) * self.idf[columns]
+        norm = np.sqrt((values * values).sum())
+        if norm > 0:
+            values = values / norm
+        logits = self.coef[:, columns].astype(np.float64) @ values + self.bias
+        logits += self.coef[:, -1].astype(np.float64) * (min(len(users), self.n_user_cap) / self.n_user_cap)
+        return 1.0 / (1.0 + np.exp(-logits))
+
+    def apply(self, profile: dict[str, list[str]], sample: dict[str, Any]) -> dict[str, list[str]]:
+        probs = self.probabilities(sample)
+        blended: dict[str, list[str]] = {}
+        for field in PROFILE_LABELS:
+            a, t = self.blend[field]
+            llm_tags = profile.get(field) or []
+            keep = {
+                tag for j, (tag_field, tag) in enumerate(self.tags)
+                if tag_field == field and a * (tag in llm_tags) + (1 - a) * probs[j] >= t
+            }
+            blended[field] = [tag for tag in llm_tags if tag in keep] + sorted(keep - set(llm_tags))
+        return blended
+
+
 def response_logprob_tokens(payload: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         return (payload["choices"][0].get("logprobs") or {}).get("content") or []
@@ -607,6 +680,11 @@ def main() -> None:
         if emotion_bias > 0 else None
     )
     bias_switched = bias_no_scores = 0
+    profile_classifier = None
+    if config.get("profile_classifier"):
+        classifier_path = Path(config["profile_classifier"])
+        profile_classifier = ProfileClassifier(classifier_path if classifier_path.is_absolute() else ROOT / classifier_path)
+    profile_added = profile_removed = 0
 
     for index, sample in enumerate(samples, 1):
         truncation_ms = 0.0
@@ -646,6 +724,13 @@ def main() -> None:
             label = apply_emotion_bias(prediction["emotion_label"], scores, emotion_bias)
             bias_switched += label != prediction["emotion_label"]
             prediction["emotion_label"] = label
+        if profile_classifier is not None:
+            blended = profile_classifier.apply(prediction["user_profile"], sample)
+            for field in PROFILE_LABELS:
+                before, after = set(prediction["user_profile"][field]), set(blended[field])
+                profile_added += len(after - before)
+                profile_removed += len(before - after)
+            prediction["user_profile"] = blended
         if backend == "transformers":
             synchronize(torch)
         elapsed_ms = (time.perf_counter() - started) * 1000 + truncation_ms
@@ -685,6 +770,9 @@ def main() -> None:
     if logprob_options is not None:
         print(f"emotion bias {emotion_bias:g} (top_logprobs {logprob_options['top_logprobs']}): "
               f"switched {bias_switched}/{len(predictions)}, no label scores {bias_no_scores}", flush=True)
+    if profile_classifier is not None:
+        print(f"profile classifier {profile_classifier.version}: tags added {profile_added}, "
+              f"removed {profile_removed} over {len(predictions)} samples", flush=True)
     print(f"PASS: {submission_path}")
     print(f"PASS: {result_dir / 'performance_report.json'}")
 

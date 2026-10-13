@@ -10,6 +10,7 @@ emotion label: its first token is the real Qwen3 first token ("an", "f", "rel", 
 Logprobs are returned only when the request asks for them (top_logprobs alternatives,
 sorted). Every request's option keys are appended to STUB_LOG (JSON lines) if set.
 STUB_REPLY_FRACTION < 1 cuts each reply (to make ROUGE-L drop).
+STUB_REPLAY = a scripts/emotion_logprobs.py output file: replay those recorded raw answers by id.
 
     python tests/stub_vllm.py --port 8000
 Also usable as a fake `vllm` binary: `vllm serve MODEL ... --port N ...` (args logged to FAKE_VLLM_ARGS_LOG).
@@ -46,6 +47,11 @@ def load_gold():
 
 GOLD = load_gold()
 FRACTION = float(os.environ.get("STUB_REPLY_FRACTION", "1"))
+# STUB_REPLAY = a file from scripts/emotion_logprobs.py: answer each id with that recorded raw answer
+REPLAY = {}
+if os.environ.get("STUB_REPLAY"):
+    with open(os.environ["STUB_REPLAY"], encoding="utf-8") as f:
+        REPLAY = {r["id"]: r["content"] for r in map(json.loads, f) if r}
 
 
 def plan(sid):
@@ -96,7 +102,11 @@ class Handler(BaseHTTPRequestHandler):
             with open(os.environ["STUB_LOG"], "a", encoding="utf-8") as f:
                 f.write(json.dumps({"id": sid, "keys": sorted(k for k in req if k not in ("messages",)),
                                     "logprobs": req.get("logprobs"), "top_logprobs": req.get("top_logprobs")}) + "\n")
-        content, tokens = answer(sid)
+        if sid in REPLAY:
+            content = REPLAY[sid]
+            tokens = [(c, None) for c in content]
+        else:
+            content, tokens = answer(sid)
         choice = {"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}
         if req.get("logprobs"):
             k = int(req.get("top_logprobs") or 0)

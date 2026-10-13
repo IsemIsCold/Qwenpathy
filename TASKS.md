@@ -1,9 +1,12 @@
 # Tasks
 
 Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own rows, and edit them in your PR.
-**Last full update: Oct 12.** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
+**Last full update: Oct 13.** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
 
-## Where we are (Oct 12)
+## Where we are (Oct 13)
+
+- **Oct 13: no submission #3. Submission #2 stays our entry.** Two last no-training ideas were tested against rules fixed before each run: the anxiety-bias correction (EXP-022: +1.4 points in-sample, no label changed out of sample) and FP8 + that correction (EXP-023: profile micro-F1 −2.1 points on 500 points → NO-GO). The tag filter stays on. **No more GPU work is planned** (≈ 3.1 card-hours left): nobody boots Migu without asking Ismail F. Details: `experiments/exp022-emotion-bias/`, `experiments/exp023-fp8-bias/`.
+- **What's left for the team (Oct 13–19):** O5 (everyone: check your own section of `docs/team-work.md` by Oct 15), O3 (Ismail M., optional: EXP-006–009 prompt files by Oct 16), F3 (expert-review evidence, Ismail F.).
 
 - **Oct 12 (late): EXP-022 ready, no GPU used.** Organisers say generated training data is allowed (answer #11), but P2 stays parked: rare classes are 4.3% of val and a run would use all the card-hours left. First, the no-training levers: an anxiety-prior correction from label logprobs (b tuned on a new 500-point slice `tune500`) + the tag filter off + FP8 vs bf16, all from **one 2-GPU session** (`scripts/exp022_session.sh`, ~0.8 card-hours). Scripts tested on a stub server. **Oct 13: run it, then pick submission #3.**
 - **Oct 12: team tasks closed out; Ismail F. finishes the rest himself** (FP8 test, card-hour ledger, expert-review package F3). Open E/Z/O rows are marked dropped or reassigned with the reason.
@@ -108,7 +111,7 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 | P2 | ~~Second training run~~ **Dropped for emotion (Oct 11, P1):** the remaining errors sit where the training labels are split, so a rebalanced run can't fix them without new errors. Reopens only for rare-class generated data if the organisers allow it (O1), with the gate in `docs/p2-imbalance-plan.md` §6. | Ismail M. | Oct 14 | dropped |
 | P3 | **Oct 12, closed by Ismail F.: done as EXP-020 = FP8 instead of AWQ (one vLLM flag, no re-quantisation; organisers allow quantisation). Latency 1.55 → 1.16 s, but n50 acc −2 labels and profile ≈ −0.05 on both slices. Submit only if the latency formula makes the speed worth ≈1.3 points.** **AWQ test** (only if the organisers allow quantised models): quantise the merged model (AutoAWQ / llm-compressor), compare FP16 vs AWQ on Migu: latency + accuracy on val50. Switch only if latency drops clearly and accuracy stays within ~2 points. Wait for the latency formula (O1). | Elly + Ismail M. | Oct 15 | done |
 | P4 | **Oct 12: done as Z1 (opt-in, off).** Truncation at inference for very long histories (same rule as `build_sft.py`): **moved up, now Z1** (see *Dataset (Zakaria)*) | Zakaria | **Oct 10** | done |
-| P5 | **Submission #3** only if P3 (latency) gives a clear win without losing accuracy | Ismail F. | Oct 16 | todo |
+| P5 | **Oct 13: no submission #3.** EXP-022 (bias on bf16) rejected, EXP-023 (FP8 + bias) NO-GO on profile micro-F1. **Submission #3** only if P3 (latency) gives a clear win without losing accuracy | Ismail F. | Oct 16 | dropped |
 | P6 | **Fallback:** if T7 fails T9 or scores worse officially, submit the merged pilot (`/root/merged/pilot_ddp`, also beats V1.8 on both slices). V1.8 with base weights stays the last resort. | Ismail F. | Oct 16 | todo |
 
 ## Phase 4: finalise (Oct 17–20)
@@ -127,7 +130,8 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 | O1 | **Oct 12, closed by Ismail F.: answered: quantised models are allowed; generated training data is allowed (answer #11). Profile metric still unanswered.** Ask the organisers (WeChat group): profile metric (F1 vs exact match), are quantised models allowed, memory bank at test time? **+ (Oct 8, decides P2/Z4) may we train on LLM-generated/rewritten data and on public Chinese emotional-dialogue datasets?** | Ismail F. | doing |
 | O1b | **Oct 12, closed by Ismail F.: Ismail F. asks the latency formula himself (decides EXP-020 / P5).** Ask the organisers: submission mechanism / eval hardware, how card-hours are counted, latency formula. Captain posts in the official group. | Elly | reassigned |
 | O2 | **Oct 12, closed by Ismail F.: not needed before the freeze.** `analyze.py` follow-ups: `--force` passthrough for submissions with blank labels; drop "increase temperature" advice (line 402) | Yahya | dropped |
-| O3 | **Oct 12, closed by Ismail F.: the F3 experiment-trail audit marks EXP-006–009 as 'results only, prompt text not archived'.** EXP-006/007/008/009: push the full prompt text + run folders into `experiments/` | Ismail M. | reassigned |
+| O3 | **Oct 13, reopened as optional:** if Ismail M. still has them, send the prompt text + outputs of EXP-006/007/008/009 to Ismail F. (a zip in WeChat is fine) **by Oct 16**; Ismail F. commits them into `experiments/`. If not, the audit note stays ('results only, prompt text not archived'). ~~Oct 12, closed by Ismail F.~~ EXP-006/007/008/009: push the full prompt text + run folders into `experiments/` | Ismail M. | optional |
+| O5 | Everyone: read your own section of `docs/team-work.md` and tell Ismail F. what is missing or wrong (credit for the expert review) **by Oct 15** | All | todo |
 | O4 | Commit everything from Oct 5: convert_val (`--exclude/--sample`), exp3_compare (retries), analyze.py + tests, participant V1.7/V1.8 into git history, READMEs, LOG | Ismail F. | todo |
 
 ## Done (archive)
