@@ -94,7 +94,7 @@ def main():
     def one(s):
         messages = [{"role": "system", "content": system_prompt},
                     {"role": "user", "content": ri.conversation_text(s)}]
-        payload = {"model": config.get("api_model", "model"), "messages": messages,
+        payload = {"model": "model", "messages": messages,  # = --served-model-name in the session scripts
                    **ri.api_generation_options(generation), **config.get("api_options", {}), **extra}
         req = urllib.request.Request(url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                                      headers={"Content-Type": "application/json"}, method="POST")

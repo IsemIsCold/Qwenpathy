@@ -1,6 +1,6 @@
 # Experiments
 
-One folder per experiment, each with a README (goal, setup, results, decision). Every score comes from `scripts/eval.py` on the fixed val slices (`data/val_*_n50.jsonl`, `data/val_*_n50b.jsonl`). The full results with numbers are in [LOG.md](../LOG.md) → *Experiments*.
+One folder per experiment, each with a README (goal, setup, results, decision). Every score comes from `scripts/eval.py` (or its scorers, via `scripts/tune_emotion_bias.py`) on the fixed val slices (`data/val_*_n50.jsonl`, `data/val_*_n50b.jsonl`; from EXP-022 also `n100` = both, and `tune500`). The full results with numbers are in [LOG.md](../LOG.md) → *Experiments*.
 
 ## Phase 1: base model and prompt (API runs, Oct 3–5)
 
@@ -23,7 +23,7 @@ One folder per experiment, each with a README (goal, setup, results, decision). 
 | EXP-015 | [exp015-v1-7-combined](exp015-v1-7-combined/README.md) | V1.7 = V0 + profile rules + tag filter | Candidate |
 | EXP-016 | [exp016-n50b-confirmation](exp016-n50b-confirmation/README.md) | V0 vs V1.7 on the untouched n50b slice | **V1.7 confirmed → V1.8 frozen** |
 
-## Phase 2: fine-tuning and serving (Migu, Oct 7–12)
+## Phase 2: fine-tuning and serving (Migu, Oct 7–13)
 
 | # | Folder | Question | Outcome |
 |---|---|---|---|
@@ -32,6 +32,7 @@ One folder per experiment, each with a README (goal, setup, results, decision). 
 | EXP-019 | [exp019-qlora-full](exp019-qlora-full/README.md) | QLoRA fine-tune: pilot (T5/T6) and full run (T7), plus the submission check (T9) | Emotion 0.54 → 0.80 / 0.62 → 0.84 → **submission #2** |
 | EXP-020 | [exp020-fp8](exp020-fp8/README.md) | FP8 weights at inference for latency | 25% faster, but quality gate failed |
 | EXP-021 | [exp021-ngram-spec](exp021-ngram-spec/README.md) | n-gram speculative decoding (lossless) for latency | Same quality, but 23% slower → rejected |
-| EXP-022 | [exp022-emotion-bias](exp022-emotion-bias/README.md) | Anxiety-prior correction from label logprobs + tag filter off (no training) | Scripts ready and tested on a stub; GPU run Oct 13 |
+| EXP-022 | [exp022-emotion-bias](exp022-emotion-bias/README.md) | Anxiety-prior correction from label logprobs + tag filter off (no training) | Bias +1.4 in-sample, 0 switches out of sample → rejected; filter stays on |
+| EXP-023 | [exp023-fp8-bias](exp023-fp8-bias/README.md) | FP8 + anxiety bias as submission #3, with a gate fixed in advance | Profile micro-F1 −2.1 points on tune500 → **NO-GO**, submission #2 stays |
 
 Task-level steps without their own folder (T1 data build, T2 environment, T4 baseline on vLLM, T9 submission check, P1 error review) are logged in [LOG.md](../LOG.md) and [TASKS.md](../TASKS.md). The P1 review is in [docs/p1-error-review.md](../docs/p1-error-review.md).

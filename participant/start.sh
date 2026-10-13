@@ -23,6 +23,14 @@ else
   # 1 GPU: fp8 KV cache so a full 32k request still fits next to 16 GB of weights
   VLLM_ARGS=(--tensor-parallel-size 1 --max-model-len 32768 --gpu-memory-utilization 0.92 --kv-cache-dtype fp8)
 fi
+# Optional weight quantisation from the config ("vllm_quantization": "fp8", EXP-020/023).
+# Absent or empty = bf16 weights, exactly as before.
+QUANTIZATION="$("$PYTHON_CMD" -c \
+  'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("vllm_quantization") or "")' \
+  "$CONFIG_FILE")"
+if [[ -n "$QUANTIZATION" ]]; then
+  VLLM_ARGS+=(--quantization "$QUANTIZATION")
+fi
 echo "GPUs detected: ${NGPU:-0} -> vLLM args: ${VLLM_ARGS[*]}"
 
 if [[ $# -ne 2 ]]; then

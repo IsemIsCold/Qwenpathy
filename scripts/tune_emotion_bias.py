@@ -21,6 +21,9 @@ Usage (laptop, repo root, venv):
         --report-gold data/val_gold_n50.jsonl data/val_gold_n50b.jsonl data/val_gold_n100.jsonl \
         --out-dir outputs/exp022/bf16
     # FP8 (no tuning set): reuse the b chosen on bf16
+    # --top-k K: keep only the K best alternatives per point, i.e. what a request with
+    #            top_logprobs=K returns (run_inference.py uses 5; same decisions as 20
+    #            up to b = 1.0 on all 700 EXP-022 points)
     python scripts/tune_emotion_bias.py --lp outputs/exp022/lp_fp8.jsonl --bias 1.25 \
         --report-gold data/val_gold_n50.jsonl data/val_gold_n50b.jsonl data/val_gold_n100.jsonl \
         --out-dir outputs/exp022/fp8
@@ -59,8 +62,10 @@ def read_jsonl(path):
         return [json.loads(line) for line in f if line.strip()]
 
 
-def label_scores(label_top):
+def label_scores(label_top, top_k=None):
     """{label: logprob} from the top-k list; several tokens for one label are summed in prob space."""
+    if top_k:
+        label_top = sorted(label_top or [], key=lambda a: -a["logprob"])[:top_k]
     probs = {}
     for alt in label_top or []:
         label = FIRST_TOKEN.get(alt["token"].strip())
@@ -94,6 +99,8 @@ def main():
     ap.add_argument("--bias", type=float, default=None, help="use this b instead of tuning")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--participant", default=str(ROOT / "participant"))
+    ap.add_argument("--top-k", type=int, default=None,
+                    help="use only the K best alternatives (= top_logprobs K in the real request)")
     args = ap.parse_args()
     if args.bias is None and not args.tune_gold:
         sys.exit("give --tune-gold (to pick b) or --bias")
@@ -111,7 +118,7 @@ def main():
         ri.OVERPREDICTED_TAGS = {}
         pred_off, _ = ri.parse_prediction(rec["id"], rec["content"])
         rows.append({"id": rec["id"], "on": pred_on, "off": pred_off, "failed": failed,
-                     "label": pred_on["emotion_label"], "scores": label_scores(rec.get("label_top"))})
+                     "label": pred_on["emotion_label"], "scores": label_scores(rec.get("label_top"), args.top_k)})
     ri.OVERPREDICTED_TAGS = filter_on
 
     # sanity: with greedy decoding the top token should be the parsed label
@@ -119,6 +126,8 @@ def main():
     agree = sum(bool(r["scores"]) and max(r["scores"], key=r["scores"].get) == r["label"] for r in rows)
     print(f"records: {len(rows)}, with label logprobs: {n_lp}, parse failures: {sum(r['failed'] for r in rows)}")
     print(f"top logprob label == parsed label: {agree}/{n_lp}  (should be ~all)")
+    if args.top_k:
+        print(f"alternatives per point: top {args.top_k}")
 
     # ---- pick b
     if args.bias is not None:
@@ -146,7 +155,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     variants = [("filter_on_b0", "on", 0.0), ("filter_off_b0", "off", 0.0),
                 (f"filter_on_b{b_star:g}", "on", b_star), (f"filter_off_b{b_star:g}", "off", b_star)]
-    summary = {"lp": args.lp, "b_chosen": b_star, "slices": {}}
+    summary = {"lp": args.lp, "b_chosen": b_star, "top_k": args.top_k, "slices": {}}
     print(f"\n{'slice':<10} {'variant':<18} {'emotion acc':>11} {'profile F1':>10} {'changed':>8}")
     for gpath in args.report_gold:
         gold_rows = read_jsonl(gpath)

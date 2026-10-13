@@ -59,6 +59,8 @@ The "Full QLoRA" column is the T9 submission check (Oct 9); T7 (Oct 8) gave the 
 
 **Where the remaining errors are:** a manual review of all 17 emotion errors on the two slices ([docs/p1-error-review.md](docs/p1-error-review.md)) found about half of them arguable or with a wrong gold label. The real ones sit on messages where the user is worried and then relieved, and on exactly that message type the training labels themselves disagree (anxiety 38% vs relaxed 24%). A second training run aimed at emotion would trade these errors for new ones, so it was not run. Data and reasoning: [docs/p2-imbalance-plan.md](docs/p2-imbalance-plan.md).
 
+**What else was tried without retraining (Oct 12–13):** FP8 weights (25% faster, but always loses profile tags: [EXP-020](experiments/exp020-fp8/README.md)), n-gram speculative decoding (23% slower: [EXP-021](experiments/exp021-ngram-spec/README.md)), turning the profile tag filter off (no gain out of sample) and correcting the model's over-use of "anxiety" from the label's logprobs (+1.4 points in-sample, no label changed out of sample: [EXP-022](experiments/exp022-emotion-bias/README.md)), and FP8 + that correction together, judged on 500 points against a rule fixed before the run (NO-GO on profile quality: [EXP-023](experiments/exp023-fp8-bias/README.md)). Submission #2 stays.
+
 Why 8B, non-thinking: [exp004-model-size](experiments/exp004-model-size/README.md), [exp006-think-8b](experiments/exp006-think-8b/README.md), [docs/technical-plan.md](docs/technical-plan.md).
 
 ## The pipeline at a glance
@@ -94,6 +96,9 @@ scripts/
   eval.py               scores a submission against gold                    (Yahya)
   analyze.py            error analysis: buckets, points lost, A/B compare   (Yahya)
   exp3_compare.py       runs the official prompt/parser through an API      (Ismail F.)
+  emotion_logprobs.py   raw answers + label logprobs from a running vLLM (EXP-022)        (Ismail F.)
+  tune_emotion_bias.py  offline: tune the anxiety bias, filter on/off (EXP-022/023)       (Ismail F.)
+  exp022_session.sh, exp023_session.sh, exp023_gate.py, exp023_install.py   one-command GPU sessions (Ismail F.)
   setup-api-env.ps1     Windows setup for API runs (venv, key, checks)      (Ismail F.)
 train/
   build_sft.py          train set -> SFT data that matches inference        (Ismail F.; spec: Zakaria)
@@ -101,6 +106,8 @@ train/
 tests/
   run_tests.py          73 tests for validate.py + eval.py                  (Yahya)
   test_analyze.py       102 tests for analyze.py v4.1 (= Yahya's v3 + review fixes)
+  test_truncation.py    inference history truncation == training (Z1)
+  test_emotion_bias.py  EXP-023: emotion bias, start.sh FP8 switch, install/restore, session (Linux; uses stub_vllm.py)
 docs/
   how-to.md             how to run everything (start here)
   team-work.md          what each member built, and how it helps the others

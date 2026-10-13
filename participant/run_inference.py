@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import statistics
@@ -136,6 +137,14 @@ def load_config() -> dict[str, Any]:
         not isinstance(max_user_tokens, int) or isinstance(max_user_tokens, bool) or max_user_tokens <= 0
     ):
         raise ValueError("max_user_tokens 必须为正整数或省略")
+    bias = config.get("emotion_bias", 0)
+    if not isinstance(bias, (int, float)) or isinstance(bias, bool) or bias < 0:
+        raise ValueError("emotion_bias 必须为非负数或省略")
+    if bias > 0 and config["backend"] != "openai_compatible":
+        raise ValueError("emotion_bias 需要 openai_compatible 后端 (logprobs)")
+    top = config.get("emotion_bias_top_logprobs", 5)
+    if not isinstance(top, int) or isinstance(top, bool) or not 1 <= top <= 20:
+        raise ValueError("emotion_bias_top_logprobs 必须为 1 到 20 之间的整数")
     return config
 
 
@@ -199,6 +208,16 @@ def request_chat_completion(
     messages: list[dict[str, str]],
     generation: dict[str, Any],
 ) -> str:
+    return response_content(request_chat_completion_raw(config, messages, generation))
+
+
+def request_chat_completion_raw(
+    config: dict[str, Any],
+    messages: list[dict[str, str]],
+    generation: dict[str, Any],
+    extra_options: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """POST one chat completion and return the parsed JSON response."""
     reserved = {"model", "messages"}
     api_options = dict(config.get("api_options", {}))
     if reserved & set(api_options):
@@ -208,6 +227,7 @@ def request_chat_completion(
         "messages": messages,
         **api_generation_options(generation),
         **api_options,
+        **(extra_options or {}),
     }
     headers = {"Content-Type": "application/json"}
     api_key = config.get("api_key", "")
@@ -231,7 +251,7 @@ def request_chat_completion(
     except urllib.error.URLError as exc:
         raise RuntimeError(f"无法连接本地 Base URL: {exc.reason}") from exc
     try:
-        return response_content(json.loads(raw_response))
+        return json.loads(raw_response)
     except json.JSONDecodeError as exc:
         raise ValueError("API 响应不是有效 JSON") from exc
 
@@ -361,6 +381,77 @@ def clean_emotion_label(emotion: Any) -> str:
     if label in EMOTIONS:
         return label
     return EMOTION_ALIASES.get(label, EMOTION_FALLBACK)
+
+
+# EXP-022/023: anxiety-prior correction. The model says "anxiety" more often than
+# gold does. With "emotion_bias": b > 0 in the config, the request also asks for the
+# top logprobs, and when the parsed label is anxiety it is switched to the best other
+# label if logprob(other) > logprob(anxiety) - b. Same functions and rule as
+# scripts/emotion_logprobs.py + scripts/tune_emotion_bias.py (b is tuned there).
+LABEL_KEY = re.compile(r'"emotion_label"\s*:\s*"')
+# First token of each label right after ' "' (Qwen3 tokenizer). Exact match only:
+# "an" is anxiety, "anger" is its own token.
+LABEL_FIRST_TOKEN = {
+    "joy": "joy", "gr": "gratitude", "rel": "relaxed", "care": "care", "pr": "pride",
+    "neutral": "neutral", "sur": "surprise", "mixed": "mixed", "sad": "sadness",
+    "lon": "loneliness", "an": "anxiety", "anger": "anger", "f": "fear", "dis": "disgust",
+    "sh": "shame", "help": "helplessness",
+}
+
+
+def label_position(tokens: list[dict[str, Any]], content: str) -> int | None:
+    """Index of the token where the emotion label value starts, or None."""
+    match = LABEL_KEY.search(content)
+    if not match:
+        return None
+    start = match.end()
+    offset = 0
+    for index, token in enumerate(tokens):
+        if offset == start:
+            return index
+        offset += len(token["token"])
+        if offset > start:  # label start falls inside a token: not a clean boundary
+            return index
+    return None
+
+
+def label_alternatives(tokens: list[dict[str, Any]], content: str) -> list[dict[str, Any]] | None:
+    """Top alternatives ({"token", "logprob"}) at the label's first token, or None."""
+    position = label_position(tokens, content)
+    if position is None:
+        return None
+    token = tokens[position]
+    alternatives = [{"token": a["token"], "logprob": a["logprob"]} for a in token.get("top_logprobs") or []]
+    if not any(a["token"] == token["token"] for a in alternatives):
+        alternatives.append({"token": token["token"], "logprob": token["logprob"]})
+    return alternatives
+
+
+def label_scores(alternatives: list[dict[str, Any]] | None) -> dict[str, float]:
+    """{label: logprob}; several tokens for one label are summed in probability space."""
+    probs: dict[str, float] = {}
+    for alternative in alternatives or []:
+        label = LABEL_FIRST_TOKEN.get(alternative["token"].strip())
+        if label is not None:
+            probs[label] = probs.get(label, 0.0) + math.exp(alternative["logprob"])
+    return {label: math.log(p) for label, p in probs.items()}
+
+
+def apply_emotion_bias(label: str, scores: dict[str, float], bias: float) -> str:
+    if bias <= 0 or label != "anxiety" or "anxiety" not in scores:
+        return label
+    others = {name: value for name, value in scores.items() if name != "anxiety"}
+    if not others:
+        return label
+    best = max(others, key=others.get)
+    return best if others[best] > scores["anxiety"] - bias else label
+
+
+def response_logprob_tokens(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        return (payload["choices"][0].get("logprobs") or {}).get("content") or []
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return []
 
 
 def normalize_prediction(sample_id: str, raw: dict[str, Any]) -> dict[str, Any]:
@@ -510,6 +601,12 @@ def main() -> None:
         interests=", ".join(sorted(PROFILE_LABELS["interests"])),
         styles=", ".join(sorted(PROFILE_LABELS["style"])),
     )
+    emotion_bias = float(config.get("emotion_bias", 0))
+    logprob_options = (
+        {"logprobs": True, "top_logprobs": config.get("emotion_bias_top_logprobs", 5)}
+        if emotion_bias > 0 else None
+    )
+    bias_switched = bias_no_scores = 0
 
     for index, sample in enumerate(samples, 1):
         truncation_ms = 0.0
@@ -535,10 +632,20 @@ def main() -> None:
             decoded = tokenizer.decode(generated, skip_special_tokens=True)
         else:
             started = time.perf_counter()
-            decoded = request_chat_completion(config, messages, generation)
+            if logprob_options is None:
+                decoded = request_chat_completion(config, messages, generation)
+            else:
+                response = request_chat_completion_raw(config, messages, generation, logprob_options)
+                decoded = response_content(response)
         prediction, parse_failed = parse_prediction(sample["id"], decoded)
         if parse_failed:
             parse_failure_ids.append(sample["id"])
+        if logprob_options is not None:
+            scores = label_scores(label_alternatives(response_logprob_tokens(response), decoded))
+            bias_no_scores += not scores
+            label = apply_emotion_bias(prediction["emotion_label"], scores, emotion_bias)
+            bias_switched += label != prediction["emotion_label"]
+            prediction["emotion_label"] = label
         if backend == "transformers":
             synchronize(torch)
         elapsed_ms = (time.perf_counter() - started) * 1000 + truncation_ms
@@ -575,6 +682,9 @@ def main() -> None:
             "dropped_turns": dropped_turns,
         }
     (result_dir / "performance_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if logprob_options is not None:
+        print(f"emotion bias {emotion_bias:g} (top_logprobs {logprob_options['top_logprobs']}): "
+              f"switched {bias_switched}/{len(predictions)}, no label scores {bias_no_scores}", flush=True)
     print(f"PASS: {submission_path}")
     print(f"PASS: {result_dir / 'performance_report.json'}")
 
