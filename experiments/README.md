@@ -34,5 +34,8 @@ One folder per experiment, each with a README (goal, setup, results, decision). 
 | EXP-021 | [exp021-ngram-spec](exp021-ngram-spec/README.md) | n-gram speculative decoding (lossless) for latency | Same quality, but 23% slower → rejected |
 | EXP-022 | [exp022-emotion-bias](exp022-emotion-bias/README.md) | Anxiety-prior correction from label logprobs + tag filter off (no training) | Bias +1.4 in-sample, 0 switches out of sample → rejected; filter stays on |
 | EXP-023 | [exp023-fp8-bias](exp023-fp8-bias/README.md) | FP8 + anxiety bias as submission #3, with a gate fixed in advance | Profile micro-F1 −2.1 points on tune500 → **NO-GO**, submission #2 stays |
+| EXP-024 | [exp024-cpu-classifier](exp024-cpu-classifier/README.md) | Can a small CPU classifier (char TF-IDF + LR, train_public only) help the LLM on profile or emotion? | Profile blend +0.035 micro-F1 (95% CI +0.014 to +0.055) on 600 val points; emotion: no gain |
+| EXP-025 | [exp025-profile-blend](exp025-profile-blend/README.md) | Ship the profile blend as submission #3 (numpy inference in `run_inference.py`) | Built and tested offline (19/19); Migu check run pending |
+| EXP-026 | [exp026-papers-check](exp026-papers-check/README.md) | Test the ideas from the master's student's papers and Zakaria's P2 package offline | Done: nothing worth a submission #4 (only gain reads future messages) |
 
 Task-level steps without their own folder (T1 data build, T2 environment, T4 baseline on vLLM, T9 submission check, P1 error review) are logged in [LOG.md](../LOG.md) and [TASKS.md](../TASKS.md). The P1 review is in [docs/p1-error-review.md](../docs/p1-error-review.md).
