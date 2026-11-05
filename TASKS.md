@@ -1,9 +1,34 @@
 # Tasks
 
 Status: `todo` · `doing` · `review` · `done` · `dropped`. Update your own rows, and edit them in your PR.
-**Last full update: Oct 13.** Deadline **Oct 20, 23:59**. Code freeze **Oct 18**.
+**Last full update: Nov 5.** Deadline **Nov 10, 23:59** (moved from Oct 20 by the organisers on Oct 17). Code freeze **Nov 8, 23:59**: after that, docs only.
 
-## Where we are (Oct 13)
+## Where we are (Nov 5)
+
+- **Submissions: 3 of 5 used. #3 (FP8 + CPU profile classifier, EXP-025) is the one that counts now. 2 left.** The last successful submission counts, so we never submit something worse after something better.
+- **#4 candidate = EXP-027** (stop generating after `emotion_label`, profile from the CPU classifier with exact-match thresholds, lenient JSON parser): ≈ +1.3 contest points over #3 offline. It still needs its Migu check run before it can be submitted. The organisers confirmed the profile score is **exact match**, so the `exact` variant is the one we use.
+- **EXP-029 (new, offline study):** can a read-out over all 36 layers of our model (the Attention Residuals idea) predict emotion and profile better than the label the model writes? Built and tested (`tests/test_exp029.py` 38/38); it needs one Migu boot. Pass rules are fixed in `experiments/exp029-depth-readout/README.md`. It ships nothing by itself; a PASS could only become #5.
+- **GPU rule unchanged: nobody boots Migu without asking Ismail F.** Every task below for the team is CPU-only.
+- The expert review is worth **30 points**: from now on, the most useful work for everyone is making the repo, the docs and the experiment logs correct and easy to check.
+
+## Phase 5: final week (Nov 5–10)
+
+One branch + PR per task, command output pasted in the PR. CPU only; no edits to `participant/` (Ismail F. owns it until the final submission).
+
+| # | Task | Owner | Pass when | Due | Status |
+|---|---|---|---|---|---|
+| N1 | **Migu status:** AIQ balance, card-hours, instance + `/mnt/storage` still there, is `/mnt/storage/exp027_upload/` there. If storage is gone: rebuild EXP-027 + restore the model from `migu-backups`. | Ismail F. | Numbers written in LOG.md *Compute* | Nov 6 | todo |
+| N2 | **One 2-GPU boot:** EXP-027 check run (`VARIANT=exact`) and EXP-029 in the same session (`scripts/exp029_session.sh`, ≈ 0.7–1.2 card-hours + ≈ 0.7 for EXP-027). PASS on EXP-027 → submit **#4**. | Ismail F. | `DONE` line in both logs; #4 accepted on the platform | Nov 7 | todo |
+| N3 | **#5 decision:** only if something beats #4 by its pre-registered rule (EXP-029 A2 path or nothing). Default: **#4 stays final and #5 is not used.** | Ismail F. | Decision written in LOG.md | Nov 9 | todo |
+| N4 | **Commit EXP-027, EXP-028 and EXP-029 into the repo** (scripts, tests, READMEs, LOG rows), repo `participant/` = exactly what was submitted (FP8 `start.sh` `a7698a02` + #4's `run_inference.py`). | Ismail F. | `git status` clean; sha256 of `participant/` files = Migu | Nov 9 | todo |
+| Y5 | **Final eval report on the 600 val points from the saved answers** (`outputs/exp022/lp_bf16.jsonl` = #2, `outputs/exp023/lp_fp8_t10.jsonl` = #3/#4's model, gold = `data/val_gold_n100.jsonl` + `data/val_gold_tune500.jsonl`): emotion accuracy, macro-F1, per-class recall, the 16×16 confusion matrix and the top-10 confusions, with `scripts/eval.py`'s own functions. New file `docs/eval-600.md` + the script that writes it (`scripts/eval_600.py`). | Yahya | Numbers reproduce LOG.md: FP8 **472/600** (0.787) with the current parser, bf16 **474/600** (0.790); top FP8 confusion fear → anxiety (15); 2nd run leaves `git diff` clean | Nov 8 | todo |
+| Z5 | **Data docs for the slices added since Oct 12:** `tune500`, `n100`, `t10` (= the 600 points = n100 + tune500), how each was made (exact `convert_val.py` command), plus the EXP-029 splits (seeded 6,000-point sample of SFT train, the 768 SFT dev points held out from fine-tuning). Update `docs/data-format.md` §6. | Zakaria | Each command reproduces the tracked file byte for byte (paste `sha256sum`) | Nov 8 | todo |
+| E6 | **Latency + how-to for the reviewers:** a latency table for submissions #1–#3 (+ #4 when known) from `performance_report.json` / LOG.md (mean, median, p95, hardware), and `docs/how-to.md` brought up to date: FP8 `start.sh`, `exp025`/`exp027`/`exp029` session commands, `tests/` commands. | Elly | Every command in how-to.md was run once (CPU ones) or matches the script's own usage text (GPU ones) | Nov 8 | todo |
+| M2 | **Training write-up check:** read `experiments/exp019-qlora-full/README.md` and the README training section against `train/configs/*.yaml` and LOG.md (template `qwen3` + `enable_thinking: false`, 350-char reply filter, LoRA r16/α32 all-linear, NF4, lr 1e-4 cosine, 1 epoch, 2-GPU DDP, merge step, GPUs-break-after-training rule). Fix anything wrong; O3 still welcome if you have the EXP-006–009 prompt files. | Ismail M. | PR lists each claim checked and its source file | Nov 8 | todo |
+| O6 | **Everyone:** read your own section of `docs/team-work.md` (last updated Oct 12) and send Ismail F. what is missing or wrong. | All | Message sent | Nov 8 | todo |
+| F5 | **README pass for the expert review:** results table up to #4, what each submission changed and why, links to every experiment folder. Then review by one teammate. | Ismail F. (review: Yahya) | Every number in the README has a LOG.md row or an experiment README behind it | Nov 10 | todo |
+
+## History: where we were (Oct 13)
 
 - **Oct 13: no submission #3. Submission #2 stays our entry.** Two last no-training ideas were tested against rules fixed before each run: the anxiety-bias correction (EXP-022: +1.4 points in-sample, no label changed out of sample) and FP8 + that correction (EXP-023: profile micro-F1 −2.1 points on 500 points → NO-GO). The tag filter stays on. **No more GPU work is planned** (≈ 3.1 card-hours left): nobody boots Migu without asking Ismail F. Details: `experiments/exp022-emotion-bias/`, `experiments/exp023-fp8-bias/`.
 - **What's left for the team (Oct 13–19):** O5 (everyone: check your own section of `docs/team-work.md` by Oct 15), O3 (Ismail M., optional: EXP-006–009 prompt files by Oct 16), F3 (expert-review evidence, Ismail F.).
@@ -118,21 +143,21 @@ Rules: installs, downloads, file copying and data prep with 无卡开机 (*wú k
 
 | # | Task | Owner | Due | Status |
 |---|---|---|---|---|
-| F1 | Pick the final config from n50 + n50b + Migu val50 | All | Oct 17 | todo |
-| F2 | Final submission (#4, keep #5 spare) | Ismail F. | Oct 18 | todo |
-| F3 | Expert-review evidence (30 pts): README, experiment logs, LOG.md, clean code, docs/how-to.md up to date | All | Oct 19 | todo |
-| F4 | Buffer: fix failed runs only, no new features | Ismail F. | Oct 20 | todo |
+| F1 | Pick the final config from n50 + n50b + Migu val50 | All | Oct 17 | dropped (Nov 5: superseded by Phase 5) |
+| F2 | Final submission (#4, keep #5 spare) | Ismail F. | Oct 18 | dropped (Nov 5: superseded by Phase 5) |
+| F3 | Expert-review evidence (30 pts): README, experiment logs, LOG.md, clean code, docs/how-to.md up to date. **Nov 5: split into Y5, Z5, E6, M2, O6, F5 (Phase 5).** | All | Nov 10 | doing |
+| F4 | Buffer: fix failed runs only, no new features | Ismail F. | Oct 20 | dropped (Nov 5: superseded by Phase 5) |
 
 ## Ongoing
 
 | # | Task | Owner | Status |
 |---|---|---|---|
-| O1 | **Oct 12, closed by Ismail F.: answered: quantised models are allowed; generated training data is allowed (answer #11). Profile metric still unanswered.** Ask the organisers (WeChat group): profile metric (F1 vs exact match), are quantised models allowed, memory bank at test time? **+ (Oct 8, decides P2/Z4) may we train on LLM-generated/rewritten data and on public Chinese emotional-dialogue datasets?** | Ismail F. | doing |
+| O1 | **Answered: quantised models are allowed; generated training data is allowed (answer #11); profile metric = exact match (confirmed after Oct 16).** Ask the organisers (WeChat group): profile metric (F1 vs exact match), are quantised models allowed, memory bank at test time? **+ (Oct 8, decides P2/Z4) may we train on LLM-generated/rewritten data and on public Chinese emotional-dialogue datasets?** | Ismail F. | done |
 | O1b | **Oct 12, closed by Ismail F.: Ismail F. asks the latency formula himself (decides EXP-020 / P5).** Ask the organisers: submission mechanism / eval hardware, how card-hours are counted, latency formula. Captain posts in the official group. | Elly | reassigned |
 | O2 | **Oct 12, closed by Ismail F.: not needed before the freeze.** `analyze.py` follow-ups: `--force` passthrough for submissions with blank labels; drop "increase temperature" advice (line 402) | Yahya | dropped |
 | O3 | **Oct 13, reopened as optional:** if Ismail M. still has them, send the prompt text + outputs of EXP-006/007/008/009 to Ismail F. (a zip in WeChat is fine) **by Oct 16**; Ismail F. commits them into `experiments/`. If not, the audit note stays ('results only, prompt text not archived'). ~~Oct 12, closed by Ismail F.~~ EXP-006/007/008/009: push the full prompt text + run folders into `experiments/` | Ismail M. | optional |
-| O5 | Everyone: read your own section of `docs/team-work.md` and tell Ismail F. what is missing or wrong (credit for the expert review) **by Oct 15** | All | todo |
-| O4 | Commit everything from Oct 5: convert_val (`--exclude/--sample`), exp3_compare (retries), analyze.py + tests, participant V1.7/V1.8 into git history, READMEs, LOG | Ismail F. | todo |
+| O5 | Everyone: read your own section of `docs/team-work.md` and tell Ismail F. what is missing or wrong (credit for the expert review) **by Oct 15** → **Nov 5: repeated as O6 (due Nov 8)** | All | dropped |
+| O4 | Commit everything from Oct 5: convert_val (`--exclude/--sample`), exp3_compare (retries), analyze.py + tests, participant V1.7/V1.8 into git history, READMEs, LOG. **Nov 5: check what is still missing as part of N4.** | Ismail F. | todo |
 
 ## Done (archive)
 
