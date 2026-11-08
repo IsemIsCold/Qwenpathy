@@ -13,6 +13,8 @@ Copy-paste commands for every tool, in the order you'll need them. Commands are 
 8. [Dataset statistics](#8-dataset-statistics-compute_statspy)
 9. [Test the tools](#9-test-the-tools-run_testspy)
 10. [Troubleshooting](#10-troubleshooting)
+11. [Offline evaluation on the 600 val points](#11-offline-evaluation-on-the-600-val-points-eval_600py)
+12. [GPU sessions on Migu](#12-gpu-sessions-on-migu-one-command-per-boot)
 
 ---
 
@@ -122,7 +124,7 @@ Outputs in `--out`:
 
 ### 3b. The real thing: the official image (`start.sh`)
 
-**Owner:** Elly · This is exactly what the organisers run:
+**Owner:** Ismail F. · This is exactly what the organisers run:
 
 ```bash
 bash /root/participant/start.sh data/val_input_n50.jsonl outputs/run1
@@ -135,6 +137,8 @@ Config lives in `participant/configs/inference_config.json`. For Qwen3 on vLLM, 
 ```
 
 Details and the Migu workflow: B7 in [TASKS.md](../TASKS.md) and §3 of [technical-plan.md](technical-plan.md).
+
+**FP8 (submissions #3 and #4):** the Migu `start.sh` adds `--quantization fp8` to the 2-GPU vLLM line (file sha256 `a7698a02…`, = the repo `start.sh` + that flag). With the config key `"vllm_quantization": "fp8"` the repo `start.sh` passes the same flag. The CPU profile classifier is switched on by `"profile_classifier": "profile_clf"` in `participant/configs/inference_config.json` (EXP-025).
 
 ---
 
@@ -218,7 +222,7 @@ The key idea: it **imports** the system prompt, label lists and history formatti
 | `*_text.jsonl` | TRL / custom loops (only with `--tokenizer`) |
 | `build_report.json` | counts: 17,752 train / 905 dev examples, 0 conversation overlap |
 
-Rules it enforces: split by `conversation_id` (no leakage), `memory_refs` always `[]`, histories over 3,500 tokens lose their oldest turns. **Inference must truncate the same way** (I5, Elly). Use `--field-order` if the prompt changes the JSON key order.
+Rules it enforces: split by `conversation_id` (no leakage), `memory_refs` always `[]`, histories over 3,500 tokens lose their oldest turns. **Inference can truncate the same way** with the config key `max_user_tokens` (Z1, off in every submission). Use `--field-order` if the prompt changes the JSON key order.
 
 ---
 
@@ -240,6 +244,16 @@ python scripts\compute_stats.py --train data\train_public.jsonl --val data\val_p
 python tests\run_tests.py          # ends with: ALL TESTS PASSED (64/64)
 ```
 
+Other test files (all CPU, run from the repo root):
+
+| Test | What it checks | Needs |
+|---|---|---|
+| `python tests\test_truncation.py` | Z1 history truncation = `build_sft.py`'s rule | `data\train_public.jsonl`, tokenizer in `models\qwen3-8b-tok` |
+| `python tests\test_emotion_bias.py` | EXP-022 logprob bias + stub vLLM server | numpy |
+| `python tests\test_profile_blend.py` | EXP-025 classifier = the sklearn reference; replay of #2's answers | numpy, `outputs\exp022\lp_bf16.jsonl` |
+| `python tests\test_analyze.py` | `analyze.py` | – |
+| `python tests\test_exp029.py` | EXP-029 feature extraction, probes, session script (tiny random Qwen3) | torch + transformers (CPU), tokenizer, `outputs\exp023\lp_fp8_t10.jsonl` |
+
 ---
 
 ## 10. Troubleshooting
@@ -254,3 +268,36 @@ python tests\run_tests.py          # ends with: ALL TESTS PASSED (64/64)
 | `400 model not supported` | model name or provider suffix wrong | check the model page's provider list, e.g. `Qwen/Qwen3-8B:nscale` |
 | Chinese text garbled in a file | written with PowerShell `>` (UTF-16) | write files from Python with `encoding="utf-8"` |
 | `Connection was reset` on `git pull` | GitHub blocked | git proxy, see the README |
+
+---
+
+## 11. Offline evaluation on the 600 val points (`eval_600.py`)
+
+**Owner:** Yahya · No GPU. Re-scores the model answers saved by EXP-022/023 (`outputs\exp022\lp_bf16.jsonl`, `outputs\exp023\lp_fp8_t10.jsonl`) for submissions #2, #3 and the #4 candidate on `data\t10_input.jsonl` (= n100 + tune500), with `run_inference.py`'s parser and `eval.py`'s scoring functions.
+
+```powershell
+python scripts\eval_600.py --check     # writes docs\eval-600.md + outputs\eval_600.json; --check = must match LOG.md
+```
+
+Expected: `#2 emotion 474/600`, `#3 472/600`, `#4 cand. 473/600`, #4 profile exact 0.6522, then `check: emotion counts match LOG.md`. A second run changes nothing (`git diff` clean). Needs `participant\profile_clf\` for the #3/#4 profile columns.
+
+---
+
+## 12. GPU sessions on Migu (one command per boot)
+
+**Owner:** Ismail F. · Nobody else boots Migu. Each experiment that needs the GPUs ships as an upload archive plus one session script that checks everything first, runs, applies the pass rule fixed in advance and restores the submission files on FAIL. JupyterLab uploads land in `/`.
+
+```bash
+mkdir -p /mnt/storage/<exp>_upload && tar -xzf /<exp>_upload.tgz -C /mnt/storage/<exp>_upload
+bash /mnt/storage/<exp>_upload/scripts/<exp>_session.sh 2>&1 | tee /mnt/storage/out/<exp>_session.log
+```
+
+| Script | What it does | Card-hours | Pass rule lives in |
+|---|---|---|---|
+| `scripts/exp022_session.sh` | bf16 label logprobs on the 600 points, latency pair, FP8 on n100 | ≈ 0.8 | `experiments/exp022-emotion-bias/` |
+| `scripts/exp023_session.sh` | FP8 + bias candidate, gate, optional install | ≈ 0.6 | `scripts/exp023_gate.py` |
+| `scripts/exp025_session.sh` | check run of submission #3 (FP8 + profile blend); restores #2 on FAIL | ≈ 0.7 | the script itself |
+| `exp027_session.sh` (`VARIANT=exact`) | check run of the #4 candidate; restores #3 on FAIL | ≈ 0.7 | `experiments/exp027-early-stop/` |
+| `scripts/exp029_session.sh` | [EXP-027 check run], hidden-state cache, depth read-out probes; resumable | ≈ 0.7–1.2 | `experiments/exp029-depth-readout/` |
+
+Rules: **train in one boot, evaluate in a fresh boot** (the GPUs break after a training process exits); a no-GPU boot (无卡开机, *wú kǎ kāijī*) is still billed at 1 card-hour per hour; shut the instance down as soon as a script prints `DONE`.

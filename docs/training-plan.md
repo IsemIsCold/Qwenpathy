@@ -1,5 +1,7 @@
 # Training plan V2 (QLoRA on Qwen3-8B, Migu only)
 
+> **Nov 8 note: this is the Oct 5 plan, kept for the record.** What actually ran differs: template `qwen3` + `enable_thinking: false` (not `qwen3_nothink`), `cutoff_len 6144`, accumulation 4 on 2 GPUs (global batch 8), warmup 3%, default AdamW. The configs that ran and the results: [experiments/exp019-qlora-full](../experiments/exp019-qlora-full/README.md).
+
 | | |
 |---|---|
 | **Owner** | Ismail M. (training lead) · review: Ismail F. |

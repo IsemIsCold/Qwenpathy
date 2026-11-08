@@ -1,3 +1,8 @@
+# PLANNING DRAFT (Oct 5). NOT the config that ran.
+# It differs from the real run in: template qwen3_nothink (does NOT add the empty <think></think> block that
+# vLLM adds with enable_thinking=false, found Oct 7), paths, cutoff_len, batch/accumulation, warmup, optimizer.
+# The config that ran on Migu: experiments/exp019-qlora-full/configs/merge_full.yaml (template qwen3 + enable_thinking: false).
+
 model_name_or_path: /mnt/storage/models/Qwen3-8B
 adapter_name_or_path: saves/qwen3-8b/pilot
 template: qwen3_nothink

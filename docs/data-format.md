@@ -175,7 +175,7 @@ mixed, sadness, loneliness, anxiety, anger, fear, disgust, shame, helplessness
 
 ## 6. Files and how to regenerate them
 
-`data/` is gitignored **except the fixed eval slices** (n50, n50b, n100), which are tracked so everyone scores on identical files. Never regenerate the slices; the commands below are for the record (checked Oct 12: they reproduce the tracked slices exactly).
+`data/` is gitignored **except the fixed eval slices** (n50, n50b, n100, tune500, t10), which are tracked so everyone scores on identical files. Never regenerate the slices; the commands below are for the record. **Checked again Nov 8:** every command reproduces the tracked file record for record. Files written on Windows end lines with CRLF and files written on Linux/Migu with LF, so compare records, not bytes (command under the table).
 
 | File | In git? | How to make it |
 |---|---|---|
@@ -185,11 +185,20 @@ mixed, sadness, loneliness, anxiety, anger, fear, disgust, shame, helplessness
 | `data/val_input_n50b.jsonl`, `data/val_gold_n50b.jsonl` | **yes** | `python scripts/convert_val.py --in data/val_public.jsonl --out data/val_input_n50b.jsonl --gold data/val_gold_n50b.jsonl --exclude data/val_gold_n50.jsonl --sample 50 --seed 42` |
 | `data/val_input_n100.jsonl`, `data/val_gold_n100.jsonl` | **yes** | n50 followed by n50b (concatenate the two files in that order) |
 | `data/val_input_tune500.jsonl`, `data/val_gold_tune500.jsonl` | **yes** | `python scripts/convert_val.py --in data/val_public.jsonl --out data/val_input_tune500.jsonl --gold data/val_gold_tune500.jsonl --exclude data/val_gold_n100.jsonl --sample 500 --seed 7` (EXP-022: picks the emotion bias; no point shared with n100) |
+| `data/t9_input.jsonl` (Migu: `/mnt/storage/val/`) | no | = `data/val_input_n100.jsonl` (n50 then n50b; 100 points). Used by the EXP-020/021/023 check runs |
+| `data/t10_input.jsonl` | **yes** | `cat data/val_input_n100.jsonl data/val_input_tune500.jsonl > data/t10_input.jsonl` (made on Migu, LF). **The 600 val points** (488 conversations) used by EXP-022 to EXP-029 and `scripts/eval_600.py`; gold = `val_gold_n100.jsonl` + `val_gold_tune500.jsonl` |
+| EXP-029 probe splits (no file in `data/`) | no | `scripts/exp029_extract.py plan`: **train** = 6,000 points sampled from `data/sft/train` (`random.Random(29).sample`), **dev** = all 768 points of `data/sft/dev` (5% of train conversations, held out from fine-tuning by `build_sft.py --dev-ratio 0.05 --seed 42`), **val** = the 600 points of `t10_input.jsonl`. The ids go to `meta.jsonl` in the feature cache |
 | `data/val_input_long5.jsonl` | no | `python scripts/make_long5.py` (the 5 longest val points outside n50/n50b) |
 | `data/sft/*` | no | `python train/build_sft.py --train data/train_public.jsonl --inference participant/run_inference.py --out-dir data/sft --tokenizer models/qwen3-8b-tok`, then `python train/check_sft.py --tokenizer models/qwen3-8b-tok --cutoff-len 6144` |
 | `docs/data-stats.md` | yes | `python scripts/compute_stats.py` (never edit by hand) |
 | `models/qwen3-8b-tok/` | no | tokenizer files of Qwen3-8B (ModelScope `Qwen/Qwen3-8B`) |
 | `participant/model/` | no | model weights; for the submission, the merged full QLoRA model (see `experiments/exp019-qlora-full`) |
+
+Check that a regenerated slice matches the tracked one (ignores line endings and key order):
+
+```bash
+python -c "import json,sys; r=lambda p:[json.loads(l) for l in open(p,encoding='utf-8-sig') if l.strip()]; a,b=r(sys.argv[1]),r(sys.argv[2]); print('same' if a==b else 'DIFFERENT', len(a), len(b))" new.jsonl data/val_input_tune500.jsonl
+```
 
 ---
 

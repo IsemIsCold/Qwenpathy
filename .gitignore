@@ -15,7 +15,17 @@ data/*
 !data/val_gold_n100.jsonl
 !data/val_input_tune500.jsonl
 !data/val_gold_tune500.jsonl
-outputs/
+!data/t10_input.jsonl
+# outputs: ignored, except the saved model answers on the 600 val points that the offline
+# evaluations re-score (scripts/eval_600.py, EXP-026/027/029 tests) and their summary
+outputs/*
+!outputs/eval_600.json
+!outputs/exp022/
+outputs/exp022/*
+!outputs/exp022/lp_bf16.jsonl
+!outputs/exp023/
+outputs/exp023/*
+!outputs/exp023/lp_fp8_t10.jsonl
 checkpoints/
 train/data/
 *.zip

@@ -9,7 +9,7 @@
 
 ## Setup
 
-- **Base model:** Qwen3-8B (`/root/participant/model`), non-thinking.
+- **Base model:** Qwen3-8B (`/root/participant/model` at training time; moved to `/root/base_qwen3_8b` on Oct 9 when the merged model took its place, T9), non-thinking.
 - **Data:** `train/build_sft.py --max-reply-chars 350` → **14,942** training examples (`migu_train`). Val conversations excluded; checked by `train/check_sft.py` (PASS, cutoff 6144). Prompt = exactly the V1.8 `SYSTEM_PROMPT` + `conversation_text()` from `participant/run_inference.py`, so training and inference see identical inputs.
 - **Method:** QLoRA. 4-bit NF4 base (bitsandbytes), LoRA r=16, α=32, dropout 0.05, on all linear layers (43.6M trainable params, 0.53%). lr 1e-4 cosine, warmup 3%, 1 epoch, `cutoff_len 6144`, bf16.
 - **Template:** `template: qwen3` + `enable_thinking: false`. This puts the empty `<think>\n\n</think>\n\n` block in the prompt exactly as vLLM does at inference; the loss is only on the JSON answer. (`qwen3_nothink` in LLaMA-Factory 0.9.5 does **not** add that block.)

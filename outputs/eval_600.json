@@ -1,0 +1,32 @@
+{
+  "#2": {
+    "correct": 474,
+    "accuracy": 0.79,
+    "macro_f1": 0.7022,
+    "profile_exact_avg": 0.5344,
+    "whole_profile_exact": 0.22,
+    "profile_micro_f1_avg": 0.4609,
+    "rouge_l": 0.294,
+    "bleu4": 0.1458
+  },
+  "#3": {
+    "correct": 472,
+    "accuracy": 0.7867,
+    "macro_f1": 0.6426,
+    "profile_exact_avg": 0.5622,
+    "whole_profile_exact": 0.18,
+    "profile_micro_f1_avg": 0.4987,
+    "rouge_l": 0.2937,
+    "bleu4": 0.1441
+  },
+  "#4 cand.": {
+    "correct": 473,
+    "accuracy": 0.7883,
+    "macro_f1": 0.6441,
+    "profile_exact_avg": 0.6522,
+    "whole_profile_exact": 0.3533,
+    "profile_micro_f1_avg": 0.3867,
+    "rouge_l": 0.2937,
+    "bleu4": 0.1441
+  }
+}
