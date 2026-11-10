@@ -1,0 +1,10 @@
+### EXP-030 V4 merge (same as experiments/exp019-qlora-full/configs/merge_full.yaml, new paths)
+model_name_or_path: /root/base_qwen3_8b
+adapter_name_or_path: /mnt/storage/runs/v4
+template: qwen3
+finetuning_type: lora
+trust_remote_code: true
+export_dir: /root/merged/v4
+export_size: 5
+export_device: cpu
+export_legacy_format: false

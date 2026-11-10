@@ -2,14 +2,15 @@
 """
 scripts/eval_600.py -- Y5: final evaluation report on the 600 val points, from answers we already saved.
 
-No GPU, no model: it re-parses the raw model answers saved by EXP-022 / EXP-023 with participant/run_inference.py
-(the same code the submissions run) and scores them with scripts/eval.py's own functions.
+No GPU, no model: it re-parses the raw model answers saved by EXP-022 / EXP-023 with submission #3's parser
+(experiments/exp027-early-stop/run_inference_sub3.py, the exact submitted file) and scores them with
+scripts/eval.py's own functions.
 
 Systems (all on the same 600 points = data/t10_input.jsonl = n100 + tune500):
   #2        full QLoRA model, bf16, V1.8 parser, profile = the model's own tags   (outputs/exp022/lp_bf16.jsonl)
   #3        same weights in FP8, profile = LLM tags blended with the CPU classifier (EXP-025)
                                                                                   (outputs/exp023/lp_fp8_t10.jsonl)
-  #4 cand.  #3's answers, label read leniently (EXP-027 parser: 2 broken-JSON answers keep their label),
+  #4 cand.  #3's answers, label read leniently (= EXP-027's parser: 2 broken-JSON answers keep their label),
             profile = CPU classifier alone with the exact-match thresholds (0.45 / 0.30 / 0.35)
 #4 stops generating after emotion_label; that changes latency, not reply or label, so the saved FP8 answers
 give its scores. All numbers are IN-SAMPLE for the profile thresholds of #3/#4 (they were fitted on these 600).
@@ -178,7 +179,8 @@ def main():
     ap.add_argument("--json", default=str(REPO / "outputs/eval_600.json"))
     ap.add_argument("--check", action="store_true", help="exit 1 unless the emotion counts match LOG.md")
     args = ap.parse_args()
-    ri = load("ri", REPO / "participant/run_inference.py")
+    # #2/#3 are scored with #3's own parser (frozen copy); #4 with the current one (EXP-027 lenient parse)
+    ri = load("ri", REPO / "experiments/exp027-early-stop/run_inference_sub3.py")
     ev = load("ev", REPO / "scripts/eval.py")
     gold = {}
     for g in args.gold:

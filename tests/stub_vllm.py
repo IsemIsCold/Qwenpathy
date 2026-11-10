@@ -11,6 +11,9 @@ Logprobs are returned only when the request asks for them (top_logprobs alternat
 sorted). Every request's option keys are appended to STUB_LOG (JSON lines) if set.
 STUB_REPLY_FRACTION < 1 cuts each reply (to make ROUGE-L drop).
 STUB_REPLAY = a scripts/emotion_logprobs.py output file: replay those recorded raw answers by id.
+EXP-027: a request's "stop" strings cut the answer like vLLM does (the stop string itself is not returned);
+STUB_PROFILE_FIRST = fraction of ids whose answer puts user_profile before emotion_label (tests the fallback);
+STUB_SLEEP_PER_CHAR = seconds of fake generation time per returned character (tests the latency gate).
 
     python tests/stub_vllm.py --port 8000
 Also usable as a fake `vllm` binary: `vllm serve MODEL ... --port N ...` (args logged to FAKE_VLLM_ARGS_LOG).
@@ -21,6 +24,7 @@ import json
 import os
 import re
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 FIRST = {"joy": "joy", "gratitude": "gr", "relaxed": "rel", "care": "care", "pride": "pr",
@@ -78,6 +82,16 @@ def answer(sid):
     return "".join(t for t, _ in tokens), tokens
 
 
+def profile_first(content):
+    """Same answer with user_profile moved before emotion_label (keys reordered, values kept)."""
+    try:
+        obj = json.loads(content, strict=False)
+    except json.JSONDecodeError:
+        return content
+    order = ["response_text", "user_profile", "emotion_label", "memory_refs"]
+    return json.dumps({k: obj[k] for k in order if k in obj}, ensure_ascii=False)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -107,6 +121,20 @@ class Handler(BaseHTTPRequestHandler):
             tokens = [(c, None) for c in content]
         else:
             content, tokens = answer(sid)
+        if h(sid + "pf", 1000) < 1000 * float(os.environ.get("STUB_PROFILE_FIRST", "0")):
+            content = profile_first(content)
+            tokens = [(c, None) for c in content]
+        for stop in req.get("stop") or []:
+            cut = content.find(stop)
+            if cut >= 0:
+                content = content[:cut]
+                kept, n = [], 0
+                for tok, alts in tokens:
+                    if n + len(tok) > cut:
+                        break
+                    kept.append((tok, alts)); n += len(tok)
+                tokens = kept
+        time.sleep(len(content) * float(os.environ.get("STUB_SLEEP_PER_CHAR", "0")))
         choice = {"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}
         if req.get("logprobs"):
             k = int(req.get("top_logprobs") or 0)

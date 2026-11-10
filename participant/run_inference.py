@@ -148,6 +148,24 @@ def load_config() -> dict[str, Any]:
     classifier_dir = config.get("profile_classifier")
     if classifier_dir is not None and (not isinstance(classifier_dir, str) or not classifier_dir):
         raise ValueError("profile_classifier 必须为目录路径字符串或省略")
+    # EXP-027: stop generating after emotion_label (the profile then comes from the classifier)
+    stop_after = config.get("stop_after_emotion", False)
+    if not isinstance(stop_after, bool):
+        raise ValueError("stop_after_emotion 必须为 true/false 或省略")
+    if stop_after and config["backend"] != "openai_compatible":
+        raise ValueError("stop_after_emotion 需要 openai_compatible 后端")
+    if stop_after and not classifier_dir:
+        raise ValueError("stop_after_emotion 需要 profile_classifier (否则画像为空)")
+    blend = config.get("profile_blend")
+    if blend is not None:
+        if not classifier_dir:
+            raise ValueError("profile_blend 需要 profile_classifier")
+        if not isinstance(blend, dict) or set(blend) != set(PROFILE_LABELS):
+            raise ValueError(f"profile_blend 必须为包含 {sorted(PROFILE_LABELS)} 的 object")
+        for field, pair in blend.items():
+            if (not isinstance(pair, list) or len(pair) != 2
+                    or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1 for v in pair)):
+                raise ValueError(f"profile_blend.{field} 必须为 [a, t]，两个 0 到 1 之间的数")
     return config
 
 
@@ -307,16 +325,31 @@ def history_token_counter(config: dict[str, Any], tokenizer: Any = None):
     return lambda text: len(tokenizer.encode(text, add_special_tokens=False))
 
 
+INVALID_ESCAPE = re.compile(r"\\(.)", flags=re.S)
+
+
+def _fix_escapes(text: str) -> str:
+    """EXP-027: a lone backslash before a character JSON can't escape becomes a literal backslash."""
+    return INVALID_ESCAPE.sub(lambda m: m.group(0) if m.group(1) in '"\\/bfnrtu' else "\\\\" + m.group(1), text)
+
+
 def extract_object(text: str) -> dict[str, Any]:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S | re.I)
     candidate = fenced.group(1) if fenced else text
     decoder = json.JSONDecoder()
+    lenient = json.JSONDecoder(strict=False)  # raw line breaks / tabs inside strings
     for match in re.finditer(r"\{", candidate):
+        rest = candidate[match.start():]
         try:
-            value, _ = decoder.raw_decode(candidate[match.start():])
+            value, _ = decoder.raw_decode(rest)
         except json.JSONDecodeError:
-            continue
+            # EXP-027: retry this same object leniently before falling through to an inner one
+            # (2 of 600 FP8 answers otherwise lost reply + label to the inner user_profile object)
+            try:
+                value, _ = lenient.raw_decode(_fix_escapes(rest))
+            except json.JSONDecodeError:
+                continue
         if isinstance(value, dict):
             return value
     raise ValueError("模型输出中没有可解析的 JSON object")
@@ -392,6 +425,24 @@ def clean_emotion_label(emotion: Any) -> str:
 # label if logprob(other) > logprob(anxiety) - b. Same functions and rule as
 # scripts/emotion_logprobs.py + scripts/tune_emotion_bias.py (b is tuned there).
 LABEL_KEY = re.compile(r'"emotion_label"\s*:\s*"')
+STOP_AFTER_EMOTION = '"user_profile"'  # EXP-027: generation stops where the profile would start
+
+
+def close_after_emotion(text: str) -> str | None:
+    """Close an answer cut at STOP_AFTER_EMOTION into a JSON object, or None if it lacks reply + label."""
+    cut = text.rstrip()
+    if cut.endswith(","):
+        cut = cut[:-1].rstrip()
+    closed = cut + "}"
+    try:
+        value = extract_object(closed)
+    except ValueError:
+        return None
+    if not isinstance(value.get("response_text"), str) or not value.get("response_text", "").strip():
+        return None
+    if not isinstance(value.get("emotion_label"), str) or not value.get("emotion_label"):
+        return None
+    return closed
 # First token of each label right after ' "' (Qwen3 tokenizer). Exact match only:
 # "an" is anxiety, "anger" is its own token.
 LABEL_FIRST_TOKEN = {
@@ -464,7 +515,7 @@ class ProfileClassifier:
 
     WHITESPACE = re.compile(r"\s\s+")
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, blend: dict[str, list[float]] | None = None) -> None:
         import numpy  # only needed when the classifier is enabled
 
         self.np = numpy
@@ -483,7 +534,7 @@ class ProfileClassifier:
         self.min_n, self.max_n = meta["ngram_range"]
         self.max_chars = meta["max_chars"]
         self.n_user_cap = meta["n_user_cap"]
-        self.blend = {field: (float(a), float(t)) for field, (a, t) in meta["blend"].items()}
+        self.blend = {field: (float(a), float(t)) for field, (a, t) in (blend or meta["blend"]).items()}
         if set(self.blend) != set(PROFILE_LABELS) or self.coef.shape != (len(self.tags), len(self.index) + 1):
             raise ValueError("profile_classifier 文件不一致")
 
@@ -683,8 +734,11 @@ def main() -> None:
     profile_classifier = None
     if config.get("profile_classifier"):
         classifier_path = Path(config["profile_classifier"])
-        profile_classifier = ProfileClassifier(classifier_path if classifier_path.is_absolute() else ROOT / classifier_path)
+        profile_classifier = ProfileClassifier(classifier_path if classifier_path.is_absolute() else ROOT / classifier_path,
+                                               config.get("profile_blend"))
     profile_added = profile_removed = 0
+    stop_after_emotion = bool(config.get("stop_after_emotion", False))
+    stop_cut = stop_fallback = 0
 
     for index, sample in enumerate(samples, 1):
         truncation_ms = 0.0
@@ -710,11 +764,27 @@ def main() -> None:
             decoded = tokenizer.decode(generated, skip_special_tokens=True)
         else:
             started = time.perf_counter()
-            if logprob_options is None:
+            extra = dict(logprob_options or {})
+            if stop_after_emotion:
+                extra["stop"] = [STOP_AFTER_EMOTION]
+            if not extra:
                 decoded = request_chat_completion(config, messages, generation)
             else:
-                response = request_chat_completion_raw(config, messages, generation, logprob_options)
+                response = request_chat_completion_raw(config, messages, generation, extra)
                 decoded = response_content(response)
+            if stop_after_emotion:
+                closed = close_after_emotion(decoded)
+                if closed is None:  # the model did not write reply + label first: full answer, still timed
+                    stop_fallback += 1
+                    extra.pop("stop")
+                    if not extra:
+                        decoded = request_chat_completion(config, messages, generation)
+                    else:
+                        response = request_chat_completion_raw(config, messages, generation, extra)
+                        decoded = response_content(response)
+                else:
+                    stop_cut += 1
+                    decoded = closed
         prediction, parse_failed = parse_prediction(sample["id"], decoded)
         if parse_failed:
             parse_failure_ids.append(sample["id"])
@@ -770,6 +840,8 @@ def main() -> None:
     if logprob_options is not None:
         print(f"emotion bias {emotion_bias:g} (top_logprobs {logprob_options['top_logprobs']}): "
               f"switched {bias_switched}/{len(predictions)}, no label scores {bias_no_scores}", flush=True)
+    if stop_after_emotion:
+        print(f"stop after emotion: cut {stop_cut}/{len(predictions)}, full-output fallbacks {stop_fallback}", flush=True)
     if profile_classifier is not None:
         print(f"profile classifier {profile_classifier.version}: tags added {profile_added}, "
               f"removed {profile_removed} over {len(predictions)} samples", flush=True)
